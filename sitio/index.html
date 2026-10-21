@@ -28,6 +28,8 @@
     .nota { font-size: 14px; color: var(--texto2); margin-top: 14px; }
     .telefono { justify-self: center; width: 280px; aspect-ratio: 9/19; border-radius: 40px; background: var(--sup); border: 10px solid #1b2333; box-shadow: 0 30px 60px rgba(20,30,60,.25); overflow: hidden; display: flex; flex-direction: column; }
     .tel-barra { background: var(--sup); border-bottom: 1px solid var(--borde); padding: 14px; display: flex; gap: 8px; align-items: center; font-weight: 700; font-size: 14px; }
+    .logo-sim { width: 44px; height: 44px; object-fit: contain; background: #fff; border-radius: 12px; padding: 2px; }
+    .logo-sim.chico { width: 26px; height: 26px; border-radius: 8px; padding: 1px; }
     .tel-barra .logo { width: 26px; height: 26px; border-radius: 8px; font-size: 11px; }
     .tel-cuerpo { padding: 14px; display: flex; flex-direction: column; gap: 10px; background: var(--fondo); flex: 1; }
     .tel-tarjeta { background: var(--sup); border: 1px solid var(--borde); border-radius: 14px; padding: 12px; font-size: 13px; }
@@ -59,7 +61,7 @@
 <body>
   <div class="envoltura">
     <header class="barra">
-      <a class="marca" href="#"><span class="logo">C_</span> Complex_</a>
+      <a class="marca" href="#"><img class="logo-sim" src="../app/img/simbolo.svg" alt=""> Complex_</a>
       <a class="btn" href="../app/">Entrar</a>
     </header>
 
@@ -74,7 +76,7 @@
         <p class="nota">¿Quieres probar sin cuenta? Entra y toca <b>"Probar el modo demo"</b>.</p>
       </div>
       <div class="telefono" aria-hidden="true">
-        <div class="tel-barra"><span class="logo">C_</span> Colegio San José</div>
+        <div class="tel-barra"><img class="logo-sim chico" src="../app/img/simbolo.svg" alt=""> Colegio San José</div>
         <div class="tel-cuerpo">
           <div class="tel-tarjeta"><b>Valentina · 6A</b>Periodo 2 · promedio <span class="azul">4.1 Alto</span></div>
           <div class="tel-tarjeta">

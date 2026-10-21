@@ -273,3 +273,7 @@ input[type=color] { width: 56px !important; min-height: 40px !important; padding
 .disponible { display:block; margin-top:6px; }
 .disponible b { color: var(--primario); }
 .disponible.alerta, .disponible.alerta b { color: var(--peligro, #c0392b); }
+
+/* Logo de Complex_ */
+.logo-grande { width: 170px; height: auto; display: block; margin: 0 auto 4px; }
+.logo-img.logo-complex { padding: 1px; }

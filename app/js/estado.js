@@ -135,10 +135,10 @@ export function logoUrl() {
   try { return E.db.urlPublica('logos', E.colegio.logo_ruta); } catch { return null; }
 }
 const escA = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-// HTML del logo: la imagen del colegio o el "C_" de Complex_
+// HTML del logo: la imagen del colegio o el símbolo de Complex_ (√-1)
 export function logoHTML(clase = 'logo-mini') {
   const u = logoUrl();
-  return u ? `<img class="${clase} logo-img" src="${escA(u)}" alt="${escA(E.colegio?.nombre || '')}">` : `<span class="${clase}">C_</span>`;
+  return u ? `<img class="${clase} logo-img" src="${escA(u)}" alt="${escA(E.colegio?.nombre || '')}">` : `<img class="${clase} logo-img logo-complex" src="img/simbolo.svg" alt="Complex_">`;
 }
 // Aplica el color institucional a toda la app (claro y oscuro)
 export function aplicarMarca() {

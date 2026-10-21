@@ -294,7 +294,7 @@ function pantallaEntrar(modo = 'entrar') {
   app.innerHTML = `
     <div class="entrada">
       <div class="entrada-caja">
-        <div class="marca"><span class="logo">C_</span><h1>Complex_</h1><p>Tu colegio, en un solo lugar.</p></div>
+        <div class="marca"><img class="logo-grande" src="img/logo-complex.svg" alt="Complex_"><p>Tu colegio, en un solo lugar.</p></div>
         <form id="f-entrar" class="form" novalidate>
           ${registro ? `
             <label>Nombres<input name="nombres" autocomplete="given-name" required></label>
@@ -389,7 +389,7 @@ async function pantallaColegios() {
   app.innerHTML = `
     <div class="entrada">
       <div class="entrada-caja ancha">
-        <div class="marca"><span class="logo">C_</span><h1>Hola, ${esc(E.yo.nombres || E.sesion.user.email)}</h1></div>
+        <div class="marca"><img class="logo logo-img logo-complex" src="img/simbolo.svg" alt="Complex_"><h1>Hola, ${esc(E.yo.nombres || E.sesion.user.email)}</h1></div>
         ${E.colegios.length ? `<p class="ayuda">Elige el colegio:</p><div class="lista">${E.colegios.map((c) => `
           <button class="fila fila-boton" data-id="${c.id}"><span class="avatar">🏫</span><span><b>${esc(c.nombre)}</b><small>${esc([...new Set(E.membresias.filter((m) => m.colegio_id === c.id).map((m) => ROL[m.rol]))].join(' · '))}</small></span></button>`).join('')}</div>`
         : `<div class="aviso-caja"><p><b>Todavía no perteneces a ningún colegio.</b></p><p>Si eres profesor, acudiente o estudiante, pídele al colegio que te agregue con tu correo <b>${esc(E.sesion.user.email || '')}</b>.</p><p>Si administras un colegio, créalo aquí:</p></div>`}
