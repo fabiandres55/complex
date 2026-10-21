@@ -54,7 +54,7 @@ export async function crearDbSupabase() {
         falla(error);
       },
       async signUp(email, pass, meta) {
-        const { data, error } = await sb.auth.signUp({ email, password: pass, options: { data: meta } });
+        const { data, error } = await sb.auth.signUp({ email, password: pass, options: { data: meta, emailRedirectTo: location.origin + location.pathname } });
         falla(error);
         return { necesitaConfirmar: !data.session };
       },
