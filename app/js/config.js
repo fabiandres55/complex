@@ -2,4 +2,4 @@
 // la seguridad la pone la RLS de la base de datos).
 export const SUPABASE_URL = 'https://puzaavuvekywpfqaxjyt.supabase.co';
 export const SUPABASE_KEY = 'sb_publishable_iCOMdZ1jkb0_XV9h28ZS3g_8-eZsuCd';
-export const APP_VERSION = '20261021061655';
+export const APP_VERSION = '20261021081219';

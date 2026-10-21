@@ -1,6 +1,6 @@
 // Service worker de Complex_: guarda la app para abrirla rápido y sin internet.
 // Los datos (Supabase) siempre van a la red.
-const VERSION = 'complex-20261021061655';
+const VERSION = 'complex-20261021081219';
 const ARCHIVOS = [
   './', './index.html', './estilos.css', './estilos-rea.css', './manifest.webmanifest', './img/icono.svg',
   './js/app.js', './js/config.js', './js/db.js', './js/demo-semilla.js', './js/ui.js', './js/estado.js', './js/calculos.js',

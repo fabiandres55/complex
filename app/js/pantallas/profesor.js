@@ -87,6 +87,12 @@ export async function planilla(m, p) {
   const pct = sumaPorcentajes(acts);
   const pesoInd = inds.reduce((s, x) => s + (Number(x.peso) || 0), 0);
   const sinInd = inds.length ? acts.filter((a) => !a.indicador_id) : [];
+  // Las actividades de cada indicador suman 100 % dentro del indicador; sin indicadores, suman 100 % en el periodo
+  const r2 = (v) => Math.round(v * 100) / 100;
+  const sumaGrupo = (indId, excluir) => r2(acts.filter((a) => a.id !== excluir && (inds.length ? a.indicador_id === indId : true)).reduce((t, a) => t + (Number(a.porcentaje) || 0), 0));
+  const sumaInd = (indId) => sumaGrupo(indId, null);
+  const descuadres = inds.filter((x) => sumaInd(x.id) !== 100);
+  const valeEnPeriodo = (a) => { const ind = inds.find((x) => x.id === a.indicador_id); return r2((Number(a.porcentaje) || 0) * (inds.length ? (Number(ind?.peso) || 0) / 100 : 1)); };
   const calc = (est) => {
     const mias = Object.fromEntries(acts.map((a) => [a.id, nota.get(a.id + '|' + est) ?? null]));
     return definitiva(notaConIndicadores(inds, acts, mias), rec.get(est));
@@ -112,7 +118,7 @@ export async function planilla(m, p) {
   }
   const cabInd = inds.length ? `<tr class="fila-ind"><th></th>${grupos.map((g) => {
     const ind = inds.find((x) => x.id === g.k);
-    return `<th colspan="${g.n}">${ind ? `<button class="btn-link" data-ind-edit="${ind.id}" ${puedeEditar ? '' : 'disabled'}>I${ind.numero} · ${esc(ind.dimension)}</button><small>${Number(ind.peso)}%</small>` : '<small class="alerta">Sin indicador</small>'}</th>`;
+    return `<th colspan="${g.n}">${ind ? `<button class="btn-link" data-ind-edit="${ind.id}" ${puedeEditar ? '' : 'disabled'}>I${ind.numero} · ${esc(ind.dimension)}</button><small>${Number(ind.peso)}% · actividades <b class="${sumaInd(ind.id) === 100 ? 'ok' : 'alerta'}">${sumaInd(ind.id)}%</b></small>` : '<small class="alerta">Sin indicador</small>'}</th>`;
   }).join('')}<th></th><th></th></tr>` : '';
 
   m.innerHTML = cabecera(esc(etiquetaAsig(b, asig)), { volver: E.rol === 'admin' ? `#/curso/${asig.curso_id}` : '#/clases', acciones: `<a class="btn" href="#/asistencia/${asig.id}">Asistencia</a>` }) + `
@@ -120,14 +126,14 @@ export async function planilla(m, p) {
     ${per.cerrado ? `<p class="aviso-caja">Este periodo está cerrado. ${E.rol === 'admin' ? 'Como administrador sí puedes cambiar notas.' : 'Solo el administrador puede cambiar notas.'}</p>` : ''}
     <div class="tarjeta-cab">
       <p class="ayuda">${inds.length
-        ? `${inds.length} indicador(es) · pesos suman <b class="${pesoInd === 100 ? 'ok' : 'alerta'}">${redondear(pesoInd, 2)}%</b>${sinInd.length ? ` · <span class="alerta">${sinInd.length} actividad(es) sin indicador no cuentan</span>` : ''}`
-        : `${acts.length} actividad(es) · suman <b class="${pct === 100 ? 'ok' : 'alerta'}">${redondear(pct, 2)}%</b>${pct !== 100 && acts.length ? ' (deberían sumar 100%)' : ''}`}</p>
+        ? `${inds.length} indicador(es) · pesos suman <b class="${pesoInd === 100 ? 'ok' : 'alerta'}">${redondear(pesoInd, 2)}%</b>${pesoInd !== 100 ? ` <span class="alerta">(deben sumar 100%${pesoInd < 100 ? `: faltan ${r2(100 - pesoInd)}%` : `: sobran ${r2(pesoInd - 100)}%`})</span>` : ''}${descuadres.map((x) => { const t = sumaInd(x.id); return ` · <span class="alerta">I${x.numero}: sus actividades suman ${t}% (${t < 100 ? `faltan ${r2(100 - t)}%` : `sobran ${r2(t - 100)}%`})</span>`; }).join('')}${sinInd.length ? ` · <span class="alerta">${sinInd.length} actividad(es) sin indicador no cuentan</span>` : ''}`
+        : `${acts.length} actividad(es) · suman <b class="${pct === 100 ? 'ok' : 'alerta'}">${redondear(pct, 2)}%</b>${pct !== 100 && acts.length ? ` <span class="alerta">(deben sumar 100%${pct < 100 ? `: faltan ${r2(100 - pct)}%` : `: sobran ${r2(pct - 100)}%`})</span>` : ''}`}</p>
       <div class="acciones">${puedeEditar ? '<button class="btn" data-indicadores>🎯 Indicadores</button><button class="btn btn-primario" data-nueva-act>＋ Actividad</button>' : ''}</div>
     </div>
     ${!ests.length ? vacio('Este curso no tiene estudiantes matriculados.') : !acts.length ? vacio(inds.length ? 'Ya tienes indicadores. Ahora crea las actividades (evaluaciones) de cada uno.' : 'Crea la primera actividad del periodo (taller, quiz, examen…) con su porcentaje. Si trabajas por logros, crea primero los Indicadores.') : `
     <div class="tabla-envoltura planilla">
       <table class="tabla tabla-notas">
-        <thead>${cabInd}<tr><th>Estudiante</th>${acts.map((a) => `<th><button class="btn-link" data-act-edit="${a.id}" ${puedeEditar ? '' : 'disabled'}>${esc(a.nombre)}</button><small>${Number(a.porcentaje)}%</small></th>`).join('')}<th title="Recuperación">Recup.</th><th>Def.</th></tr></thead>
+        <thead>${cabInd}<tr><th>Estudiante</th>${acts.map((a) => `<th><button class="btn-link" data-act-edit="${a.id}" ${puedeEditar ? '' : 'disabled'}>${esc(a.nombre)}</button><small title="Vale ${valeEnPeriodo(a)}% de la nota del periodo">${Number(a.porcentaje)}%${inds.length && a.indicador_id ? ` · ${valeEnPeriodo(a)}% def.` : ''}</small></th>`).join('')}<th title="Recuperación">Recup.</th><th>Def.</th></tr></thead>
         <tbody>${ests.map(filaEst).join('')}</tbody>
       </table>
     </div>
@@ -196,12 +202,26 @@ export async function planilla(m, p) {
     { name: 'porcentaje', label: inds.length ? 'Porcentaje dentro del indicador (%)' : 'Porcentaje dentro del periodo (%)', tipo: 'number', req: true },
     { name: 'fecha', label: 'Fecha', tipo: 'date' },
   ];
+  const validarAct = (actId) => (d) => {
+    const p = Number(d.porcentaje);
+    if (!(p > 0) || p > 100) throw new Error('El porcentaje debe ser mayor que 0 y máximo 100.');
+    if (inds.length && !d.indicador_id) return; // sin indicador no cuenta en la nota (se avisa en la planilla)
+    const ind = inds.find((x) => x.id === d.indicador_id);
+    const otros = sumaGrupo(d.indicador_id, actId);
+    if (r2(otros + p) > 100) {
+      const donde = ind ? `del indicador I${ind.numero} (que vale ${Number(ind.peso)}% del periodo)` : 'del periodo';
+      if (otros >= 100) throw new Error(`Las actividades ${donde} ya suman ${otros}%. Para agregar esta, primero baja el % de otra actividad de ${ind ? 'ese indicador' : 'este periodo'} (todas deben sumar 100%).`);
+      throw new Error(`Las actividades ${donde} deben sumar 100%. Las otras ya suman ${otros}%: a esta le puedes dar máximo ${r2(100 - otros)}%.`);
+    }
+  };
   m.querySelector('[data-nueva-act]')?.addEventListener('click', async () => {
-    const falta = inds.length ? '' : Math.max(0, 100 - pct);
-    if (await editar({ titulo: 'Nueva actividad', tabla: 'actividades', campos: camposAct(), fila: { porcentaje: falta || '', fecha: hoy(), indicador_id: inds[0]?.id }, extra: { asignacion_id: asig.id, periodo_id: per.id } })) recargar();
+    // Propone el indicador que aún tiene espacio y el % que le falta para llegar a 100
+    const ind = inds.find((x) => sumaInd(x.id) < 100) || inds[0];
+    const falta = Math.max(0, r2(100 - (inds.length ? sumaInd(ind.id) : pct)));
+    if (await editar({ titulo: 'Nueva actividad', tabla: 'actividades', campos: camposAct(), fila: { porcentaje: falta || '', fecha: hoy(), indicador_id: ind?.id }, extra: { asignacion_id: asig.id, periodo_id: per.id }, validar: validarAct(null) })) recargar();
   });
   m.querySelectorAll('[data-act-edit]').forEach((bt) => (bt.onclick = async () => {
-    if (await editar({ titulo: 'Actividad', tabla: 'actividades', campos: camposAct(), fila: acts.find((a) => a.id === bt.dataset.actEdit) })) recargar();
+    if (await editar({ titulo: 'Actividad', tabla: 'actividades', campos: camposAct(), fila: acts.find((a) => a.id === bt.dataset.actEdit), validar: validarAct(bt.dataset.actEdit) })) recargar();
   }));
   const camposInd = [
     { name: 'numero', label: 'Número', tipo: 'number', req: true },
@@ -210,18 +230,25 @@ export async function planilla(m, p) {
     { name: 'peso', label: 'Peso en la nota del periodo (%)', tipo: 'number', req: true },
   ];
   const editarInd = async (fila) => {
-    if (await editar({ titulo: fila?.id ? 'Indicador' : 'Nuevo indicador', tabla: 'indicadores', campos: camposInd, fila, extra: { asignacion_id: asig.id, periodo_id: per.id }, validar: (d) => { if (!d.descripcion) throw new Error('Escribe la descripción.'); } })) recargar();
+    if (await editar({ titulo: fila?.id ? 'Indicador' : 'Nuevo indicador', tabla: 'indicadores', campos: camposInd, fila, extra: { asignacion_id: asig.id, periodo_id: per.id }, validar: (d) => {
+      if (!d.descripcion) throw new Error('Escribe la descripción.');
+      const w = Number(d.peso);
+      if (!(w > 0) || w > 100) throw new Error('El peso debe ser mayor que 0 y máximo 100.');
+      const otros = r2(inds.filter((x) => x.id !== fila?.id).reduce((t, x) => t + (Number(x.peso) || 0), 0));
+      if (r2(otros + w) > 100 && otros >= 100) throw new Error(`Los indicadores del periodo ya suman ${otros}%. Para agregar este, primero baja el peso de otro indicador (todos deben sumar 100%).`);
+      if (r2(otros + w) > 100) throw new Error(`Los indicadores del periodo deben sumar 100%. Los otros ya suman ${otros}%: a este le puedes dar máximo ${r2(100 - otros)}%.`);
+    } })) recargar();
   };
   m.querySelectorAll('[data-ind-edit]').forEach((bt) => (bt.onclick = () => editarInd(inds.find((x) => x.id === bt.dataset.indEdit))));
   m.querySelector('[data-indicadores]')?.addEventListener('click', async () => {
     const r = await ventana({
       titulo: `Indicadores · ${per.nombre}`,
-      html: `<p class="ayuda">Los indicadores (logros) agrupan las actividades. Cada uno pertenece a una dimensión y tiene un peso en la nota del periodo.</p>
-        ${inds.length ? `<div class="lista">${inds.map((x) => `<button class="fila fila-boton" data-i="${x.id}"><span class="num">I${x.numero}</span><span><b>${esc(x.descripcion)}</b><small>${esc(x.dimension)} · ${Number(x.peso)}% · ${acts.filter((a) => a.indicador_id === x.id).length} actividad(es)</small></span></button>`).join('')}</div>` : vacio('Aún no hay indicadores en este periodo.')}`,
+      html: `<p class="ayuda">Los indicadores (logros) agrupan las actividades. Cada uno pertenece a una dimensión y tiene un peso en la nota del periodo. Los pesos de los indicadores suman 100%, y las actividades de cada indicador suman 100% dentro de él (ej.: I1 vale 60% → Taller 50% + Quiz 50%).</p>
+        ${inds.length ? `<div class="lista">${inds.map((x) => `<button class="fila fila-boton" data-i="${x.id}"><span class="num">I${x.numero}</span><span><b>${esc(x.descripcion)}</b><small>${esc(x.dimension)} · ${Number(x.peso)}% · ${acts.filter((a) => a.indicador_id === x.id).length} actividad(es) que suman <b class="${sumaInd(x.id) === 100 ? 'ok' : 'alerta'}">${sumaInd(x.id)}%</b></small></span></button>`).join('')}</div>` : vacio('Aún no hay indicadores en este periodo.')}`,
       alAbrir: (caja, cerrar) => caja.querySelectorAll('[data-i]').forEach((el) => (el.onclick = () => { cerrar(null); editarInd(inds.find((x) => x.id === el.dataset.i)); })),
       botones: [{ texto: 'Cerrar' }, { texto: '＋ Indicador', valor: 'nuevo' }],
     });
-    if (r === 'nuevo') editarInd({ numero: (inds.at(-1)?.numero || 0) + 1, dimension: 'Cognitiva', peso: inds.length ? '' : 100 });
+    if (r === 'nuevo') editarInd({ numero: (inds.at(-1)?.numero || 0) + 1, dimension: 'Cognitiva', peso: Math.max(0, r2(100 - pesoInd)) || '' });
   });
   // Menciones (Mérito, etc.) al tocar el nombre del estudiante
   m.querySelectorAll('[data-alumno]').forEach((bt) => (bt.onclick = async () => {
