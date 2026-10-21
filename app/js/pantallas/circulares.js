@@ -1,6 +1,6 @@
 // Circulares: el admin las escribe y publica a todo el colegio, una sede, un grado o un curso
 // (y opcionalmente solo a ciertos roles). Cada persona marca la lectura.
-import { E, base, perfiles } from '../estado.js';
+import { E, base, perfiles, avisarPorCorreo } from '../estado.js';
 import { esc, aviso, ventana, leerForm, confirmar, nombre, vacio, fechaHora, ROL } from '../ui.js';
 import { cabecera, camposHTML } from './comun.js';
 
@@ -80,7 +80,7 @@ export async function detalle(m, p) {
   m.querySelector('[data-editar]')?.addEventListener('click', () => editarCircular(b, c));
   m.querySelector('[data-publicar]')?.addEventListener('click', async () => {
     if (!(await confirmar('¿Publicar la circular?', `La verán: ${destino(b, c)}.`, 'Publicar'))) return;
-    try { await E.db.update('circulares', { publicada_en: new Date().toISOString() }, { id: c.id }); aviso('Circular publicada'); detalle(m, p); } catch (e) { aviso(e.message, 'error'); }
+    try { await E.db.update('circulares', { publicada_en: new Date().toISOString() }, { id: c.id }); avisarPorCorreo('circular', c.id); aviso('Circular publicada'); detalle(m, p); } catch (e) { aviso(e.message, 'error'); }
   });
 }
 
@@ -114,6 +114,7 @@ async function editarCircular(b, c) {
     if (publicar) d.publicada_en = new Date().toISOString();
     if (c) await E.db.update('circulares', d, { id: c.id });
     else [c] = await E.db.insert('circulares', [{ colegio_id: E.colegio.id, autor_id: E.yo.id, ...d }]);
+    if (publicar) avisarPorCorreo('circular', c.id);
     return c.id;
   };
   const r = await ventana({

@@ -1,7 +1,7 @@
 // Comunicación (REA Phidias §3.1): Bandeja de entrada, Redactar mensaje, Enviados.
 // Mensajes privados con acuse de lectura por destinatario, archivar/eliminar,
 // respuestas (si el autor las permite), reenviar, adjuntos y "destacar en cartelera".
-import { E, perfiles } from '../estado.js';
+import { E, perfiles, avisarPorCorreo } from '../estado.js';
 import { esc, aviso, ventana, confirmar, nombre, nombreLista, iniciales, vacio, fechaHora, fecha, $$ } from '../ui.js';
 import { cabecera, pestanas, buscar, conectarBuscador } from './comun.js';
 
@@ -279,6 +279,7 @@ export async function redactar(m, p) {
         await E.db.subirArchivo(BUCKET, ruta, a);
         await E.db.insert('mensaje_adjuntos', [{ colegio_id: E.colegio.id, mensaje_id: x.id, ruta, nombre: a.name, tipo: a.type || null, bytes: a.size }]);
       }
+      avisarPorCorreo('mensaje', x.id);
       aviso('Mensaje enviado');
       location.hash = '#/mensaje/' + x.id;
     } catch (e) {

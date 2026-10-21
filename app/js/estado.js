@@ -153,3 +153,9 @@ export function aplicarMarca() {
 :root[data-theme="dark"] { ${oscuro} }`;
   document.querySelector('meta[name=theme-color]')?.setAttribute('content', c);
 }
+
+// Aviso por correo real (Edge Function avisos-correo). No bloquea ni muestra errores: el mensaje ya quedó en Complex_.
+export function avisarPorCorreo(tipo, id) {
+  if (E.db?.modo !== 'real' || !id) return;
+  E.db.funcion('avisos-correo', { tipo, id }).catch(() => {});
+}

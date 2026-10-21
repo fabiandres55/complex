@@ -433,6 +433,9 @@ async function perfil() {
         <button class="btn" id="btn-guardar-perfil">Guardar mis datos</button>
       </div>
     </section>
+    ${'avisos_correo' in E.yo || E.db.modo === 'demo' ? `<section class="tarjeta"><h2>Avisos por correo</h2>
+      <label class="fila"><input type="checkbox" id="chk-avisos" ${E.yo.avisos_correo !== false ? 'checked' : ''}><span><b>Avisarme por correo</b><small>Te escribimos a ${esc(E.sesion?.user?.email?.endsWith('@usuarios.complex') ? 'tu correo (aún no tienes uno registrado)' : E.sesion?.user?.email || E.yo.correo || 'tu correo')} cuando te llegue un mensaje o una circular.</small></span></label>
+    </section>` : ''}
     ${E.rol === 'admin' ? `<section class="tarjeta"><h2>Colegio</h2><a class="fila fila-boton" href="#/ajustes-colegio"><span>⚙️</span><span><b>Ajustes del colegio</b><small>Nombre, escala de notas</small></span></a></section>` : ''}
     <section class="tarjeta">
       <h2>Apariencia</h2>
@@ -456,6 +459,10 @@ async function perfil() {
       aviso('Datos guardados');
     } catch (e) { aviso(e.message, 'error'); }
   };
+  $('#chk-avisos')?.addEventListener('change', async (e) => {
+    try { await E.db.update('perfiles', { avisos_correo: e.target.checked }, { id: E.yo.id }); E.yo.avisos_correo = e.target.checked; aviso(e.target.checked ? 'Te avisaremos por correo' : 'Ya no te avisaremos por correo'); }
+    catch (err) { e.target.checked = !e.target.checked; aviso(err.message, 'error'); }
+  });
   $('#btn-cambiar-rol')?.addEventListener('click', elegirRol);
   $('#btn-cambiar-colegio').onclick = () => { E.colegio = null; navegar(); };
   $('#btn-salir').onclick = salir;
