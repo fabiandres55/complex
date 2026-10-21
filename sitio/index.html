@@ -68,10 +68,9 @@
         <h1>Tu colegio, en un solo lugar.</h1>
         <p>Notas, mensajería, aula virtual, asistencia, tesorería, matrículas y boletines para directivos, profesores, familias y estudiantes. En el celular y en el computador.</p>
         <div class="botones">
-          <a class="btn btn-pri" id="btn-apk" href="descargas/complex.apk" download><span class="ic">🤖</span><span>Descargar para Android<small>Instalador APK</small></span></a>
+          <a class="btn btn-pri" href="../app/?instalar"><span class="ic">📲</span><span>Instalar en el celular<small>Android, iPhone y PC</small></span></a>
           <a class="btn" href="../app/"><span class="ic">🌐</span><span>Usar en el navegador<small>PC, iPhone y Android</small></span></a>
         </div>
-        <p class="aviso" id="aviso-apk">El instalador para Android estará disponible muy pronto. Mientras tanto, abre Complex_ en el navegador del celular y toca <b>"Instalar"</b> o <b>"Agregar a la pantalla principal"</b>: queda como una app.</p>
         <p class="nota">¿Quieres probar sin cuenta? Entra y toca <b>"Probar el modo demo"</b>.</p>
       </div>
       <div class="telefono" aria-hidden="true">
@@ -123,12 +122,12 @@
 
   <section>
     <div class="envoltura">
-      <h2>Cómo instalarla en Android</h2>
+      <h2>Cómo instalarla</h2>
       <ol class="pasos">
-        <li>Toca <b>"Descargar para Android"</b> en esta página.</li>
-        <li>Abre el archivo <b>complex.apk</b> desde las notificaciones o la carpeta <b>Descargas</b>.</li>
-        <li>Si Android lo pide, permite <b>"Instalar apps desconocidas"</b> para tu navegador (solo esta vez).</li>
-        <li>Toca <b>Instalar</b> y luego <b>Abrir</b>. Entra con el correo que te dio tu colegio.</li>
+        <li>Toca <b>"Instalar en el celular"</b> en esta página (en Android, ábrela con <b>Chrome</b>).</li>
+        <li>Toca <b>"Instalar"</b> en el aviso que aparece. Si no aparece: menú <b>⋮</b> → <b>"Instalar app"</b>.</li>
+        <li>En iPhone: en <b>Safari</b>, botón <b>Compartir</b> → <b>"Agregar a inicio"</b>.</li>
+        <li>Listo: Complex_ queda con su ícono en la pantalla de inicio. Entra con el correo o el documento que te dio tu colegio.</li>
       </ol>
     </div>
   </section>
@@ -137,7 +136,7 @@
     <div class="descarga">
       <h2>Empieza hoy</h2>
       <div class="botones">
-        <a class="btn btn-pri" href="descargas/complex.apk" download data-apk><span class="ic">🤖</span><span>Descargar APK</span></a>
+        <a class="btn btn-pri" href="../app/?instalar"><span class="ic">📲</span><span>Instalar Complex_</span></a>
         <a class="btn" href="../app/"><span class="ic">🌐</span><span>Abrir en el navegador</span></a>
       </div>
     </div>
@@ -145,17 +144,5 @@
 
   <footer>Complex_ · Gestión escolar · Hecho en Colombia</footer>
 
-  <script>
-    // Si todavía no hay APK publicado, mostramos cómo instalarla desde el navegador.
-    fetch('descargas/complex.apk', { method: 'HEAD' }).then((r) => {
-      if (r.ok) return;
-      document.querySelectorAll('#btn-apk, [data-apk]').forEach((a) => a.addEventListener('click', (e) => {
-        e.preventDefault();
-        const av = document.getElementById('aviso-apk');
-        av.style.display = 'block';
-        av.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }));
-    }).catch(() => {});
-  </script>
 </body>
 </html>

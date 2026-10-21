@@ -47,13 +47,14 @@ export async function carnet(m, p) {
       <footer><small>Válido para el año lectivo ${esc(b.anio?.anio || '')} · Expedido ${fecha(hoy())}</small>${ficha?.contacto_telefono ? `<small>En caso de emergencia: ${esc(ficha.contacto_nombre || '')} ${esc(ficha.contacto_telefono)}</small>` : ''}</footer>
     </article>
     <p class="ayuda no-imprimir">Muestra este carnet en la portería o la biblioteca. El código QR identifica al estudiante en el colegio.</p>`;
+  const caja = m.querySelector('[data-qr]');
   try {
     const qrcode = await cargarQR();
     const q = qrcode(0, 'M');
     q.addData(codigo);
     q.make();
-    m.querySelector('[data-qr]').innerHTML = q.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+    caja.innerHTML = q.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
   } catch (e) {
-    m.querySelector('[data-qr]').innerHTML = `<small>${esc(e.message)}</small>`;
+    caja.innerHTML = `<small>${esc(e.message)}</small>`;
   }
 }

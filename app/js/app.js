@@ -23,6 +23,33 @@ import * as carnetP from './pantallas/carnet.js';
 
 const main = () => $('#principal');
 
+// ---------------------------------------------------------------- Instalar (como Relax: Chrome crea la app sola)
+let instalador = null;
+const instalada = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); instalador = e; });
+window.addEventListener('appinstalled', () => { instalador = null; document.querySelectorAll('[data-instalar]').forEach((b) => b.remove()); aviso('Complex_ quedó instalada en tu equipo.'); });
+const botonInstalar = (clase = 'btn btn-ancho') => (instalada() ? '' : `<button class="${clase}" data-instalar>📲 Instalar Complex_</button>`);
+export async function instalarApp() {
+  if (instalada()) return aviso('Ya estás usando Complex_ instalada.');
+  if (instalador) {
+    instalador.prompt();
+    const r = await instalador.userChoice.catch(() => null);
+    if (r?.outcome === 'accepted') instalador = null;
+    return;
+  }
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  await ventana({
+    titulo: 'Instalar Complex_',
+    html: `<p>Complex_ se instala como una app, sin descargar archivos:</p>
+      <ol class="pasos-instalar">${ios
+        ? '<li>Abre Complex_ en <b>Safari</b>.</li><li>Toca el botón <b>Compartir</b> (cuadro con flecha).</li><li>Elige <b>"Agregar a inicio"</b> y luego <b>Agregar</b>.</li>'
+        : '<li>Abre Complex_ en <b>Chrome</b>.</li><li>Toca el menú <b>⋮</b> (arriba a la derecha).</li><li>Elige <b>"Instalar app"</b> o <b>"Agregar a la pantalla principal"</b> y confirma.</li><li>En el computador también sirve: el ícono de instalar aparece en la barra de dirección.</li>'}</ol>
+      <p class="ayuda">Queda con su ícono en la pantalla de inicio y abre a pantalla completa, como Relax.</p>`,
+    botones: [{ texto: 'Entendido', valor: true }],
+  });
+}
+document.addEventListener('click', (e) => { if (e.target.closest('[data-instalar]')) instalarApp(); });
+
 // ---------------------------------------------------------------- Tema
 export function aplicarTema() {
   const t = pref('tema') || 'auto';
@@ -282,6 +309,7 @@ function pantallaEntrar(modo = 'entrar') {
         </div>
         <div class="separador"><span>o</span></div>
         <button class="btn btn-ancho" id="btn-demo">Probar el modo demo</button>
+        ${botonInstalar('btn btn-ancho btn-instalar')}
         <p class="nota-pie">v${esc(APP_VERSION)}</p>
       </div>
     </div>`;
@@ -415,7 +443,7 @@ async function perfil() {
     <section class="tarjeta">
       ${E.roles.length > 1 ? `<button class="fila fila-boton" id="btn-cambiar-rol"><span>🔁</span><span><b>Ver como…</b><small>Ahora: ${ROL[E.rol]}</small></span></button>` : ''}
       <button class="fila fila-boton" id="btn-cambiar-colegio"><span>🏫</span><span><b>Cambiar de colegio</b></span></button>
-      <a class="fila fila-boton" href="../sitio/index.html"><span>📲</span><span><b>Instalar la app</b><small>Android y navegador</small></span></a>
+      ${instalada() ? '' : '<button class="fila fila-boton" data-instalar><span>📲</span><span><b>Instalar la app</b><small>Android, iPhone y computador</small></span></button>'}
       <button class="fila fila-boton peligro" id="btn-salir"><span>🚪</span><span><b>Cerrar sesión</b></span></button>
     </section>
     <p class="nota-pie">Complex_ v${esc(APP_VERSION)}${E.db.modo === 'demo' ? ' · modo demo' : ''}</p>`;
@@ -471,6 +499,17 @@ async function arrancar() {
     if (!!s !== !!E.sesion) arrancarSesion();
   });
   await arrancarSesion();
+  if (new URLSearchParams(location.search).has('instalar') && !instalada()) {
+    history.replaceState(null, '', location.pathname + location.hash);
+    // El aviso de Chrome necesita un toque de la persona: se muestra un botón grande
+    setTimeout(() => {
+      const b = document.createElement('button');
+      b.className = 'aviso ver aviso-version';
+      b.textContent = '📲 Toca aquí para instalar Complex_';
+      b.onclick = () => { b.remove(); instalarApp(); };
+      document.body.appendChild(b);
+    }, 800);
+  }
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     const habiaControlador = !!navigator.serviceWorker.controller;
     navigator.serviceWorker.register('sw.js').catch(() => {});

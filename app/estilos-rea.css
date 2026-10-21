@@ -265,3 +265,7 @@ input[type=color] { width: 56px !important; min-height: 40px !important; padding
 .carnet footer { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px 14px; border-top: 1px dashed #ccc; color: #555; }
 .carnet footer small { color: #555; }
 @media print { .carnet { box-shadow: none; } }
+
+/* Instalar */
+.btn-instalar { margin-top: 10px; }
+.pasos-instalar { padding-left: 22px; line-height: 1.7; }
