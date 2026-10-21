@@ -38,7 +38,7 @@ function convertir(campos, d) {
 }
 
 // Crea o edita una fila de una tabla con colegio_id. Devuelve la fila guardada o null.
-export async function editar({ titulo, tabla, campos, fila, extra = {}, borrable = true, validar }) {
+export async function editar({ titulo, tabla, campos, fila, extra = {}, borrable = true, validar, alAbrir }) {
   const nuevo = !fila?.id;
   const botones = [];
   if (!nuevo && borrable) botones.push({ texto: 'Eliminar', clase: 'btn-peligro', antes: async () => {
@@ -60,7 +60,7 @@ export async function editar({ titulo, tabla, campos, fila, extra = {}, borrable
     aviso('Guardado');
     return r || { ...fila, ...d };
   } });
-  return ventana({ titulo, html: camposHTML(campos, fila || {}), botones });
+  return ventana({ titulo, html: camposHTML(campos, fila || {}), botones, alAbrir });
 }
 
 export const cabecera = (titulo, { volver, acciones = '' } = {}) => `

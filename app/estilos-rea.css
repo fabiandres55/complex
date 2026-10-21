@@ -269,3 +269,7 @@ input[type=color] { width: 56px !important; min-height: 40px !important; padding
 /* Instalar */
 .btn-instalar { margin-top: 10px; }
 .pasos-instalar { padding-left: 22px; line-height: 1.7; }
+
+.disponible { display:block; margin-top:6px; }
+.disponible b { color: var(--primario); }
+.disponible.alerta, .disponible.alerta b { color: var(--peligro, #c0392b); }

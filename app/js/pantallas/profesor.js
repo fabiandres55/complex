@@ -214,14 +214,37 @@ export async function planilla(m, p) {
       throw new Error(`Las actividades ${donde} deben sumar 100%. Las otras ya suman ${otros}%: a esta le puedes dar máximo ${r2(100 - otros)}%.`);
     }
   };
+  // Muestra cuánto % queda disponible (según el indicador elegido) y no deja escribir más que eso
+  const disponibleAct = (actId) => (caja) => {
+    const inp = caja.querySelector('[name=porcentaje]');
+    const sel = caja.querySelector('[name=indicador_id]');
+    const nota = document.createElement('small');
+    nota.className = 'ayuda disponible';
+    inp.after(nota);
+    const pintar = (recortar) => {
+      const indId = sel ? sel.value || null : null;
+      if (inds.length && !indId) { nota.innerHTML = 'Sin indicador: esta actividad no cuenta en la nota.'; nota.className = 'ayuda disponible alerta'; return; }
+      const ind = inds.find((x) => x.id === indId);
+      const otros = sumaGrupo(indId, actId);
+      const max = Math.max(0, r2(100 - otros));
+      const v = Number(String(inp.value).replace(',', '.'));
+      if (recortar && v > max) { inp.value = String(max).replace('.', ','); aviso(`Máximo ${max}%: las otras actividades${ind ? ` de I${ind.numero}` : ''} ya suman ${otros}%.`, 'error'); }
+      const queda = r2(max - (Number(String(inp.value).replace(',', '.')) || 0));
+      nota.innerHTML = `Disponible <b>${max}%</b>${ind ? ` en I${ind.numero} (vale ${Number(ind.peso)}% del periodo)` : ' en el periodo'} · las otras actividades suman ${otros}%${inp.value ? ` · después de esta quedan <b>${Math.max(0, queda)}%</b>` : ''}`;
+      nota.className = 'ayuda disponible' + (max === 0 ? ' alerta' : '');
+    };
+    inp.addEventListener('input', () => pintar(true));
+    sel?.addEventListener('change', () => pintar(true));
+    pintar(false);
+  };
   m.querySelector('[data-nueva-act]')?.addEventListener('click', async () => {
     // Propone el indicador que aún tiene espacio y el % que le falta para llegar a 100
     const ind = inds.find((x) => sumaInd(x.id) < 100) || inds[0];
     const falta = Math.max(0, r2(100 - (inds.length ? sumaInd(ind.id) : pct)));
-    if (await editar({ titulo: 'Nueva actividad', tabla: 'actividades', campos: camposAct(), fila: { porcentaje: falta || '', fecha: hoy(), indicador_id: ind?.id }, extra: { asignacion_id: asig.id, periodo_id: per.id }, validar: validarAct(null) })) recargar();
+    if (await editar({ titulo: 'Nueva actividad', tabla: 'actividades', campos: camposAct(), fila: { porcentaje: falta || '', fecha: hoy(), indicador_id: ind?.id }, extra: { asignacion_id: asig.id, periodo_id: per.id }, validar: validarAct(null), alAbrir: disponibleAct(null) })) recargar();
   });
   m.querySelectorAll('[data-act-edit]').forEach((bt) => (bt.onclick = async () => {
-    if (await editar({ titulo: 'Actividad', tabla: 'actividades', campos: camposAct(), fila: acts.find((a) => a.id === bt.dataset.actEdit), validar: validarAct(bt.dataset.actEdit) })) recargar();
+    if (await editar({ titulo: 'Actividad', tabla: 'actividades', campos: camposAct(), fila: acts.find((a) => a.id === bt.dataset.actEdit), validar: validarAct(bt.dataset.actEdit), alAbrir: disponibleAct(bt.dataset.actEdit) })) recargar();
   }));
   const camposInd = [
     { name: 'numero', label: 'Número', tipo: 'number', req: true },
@@ -230,7 +253,23 @@ export async function planilla(m, p) {
     { name: 'peso', label: 'Peso en la nota del periodo (%)', tipo: 'number', req: true },
   ];
   const editarInd = async (fila) => {
-    if (await editar({ titulo: fila?.id ? 'Indicador' : 'Nuevo indicador', tabla: 'indicadores', campos: camposInd, fila, extra: { asignacion_id: asig.id, periodo_id: per.id }, validar: (d) => {
+    const alAbrir = (caja) => {
+      const inp = caja.querySelector('[name=peso]');
+      const nota = document.createElement('small');
+      nota.className = 'ayuda disponible';
+      inp.after(nota);
+      const otros = r2(inds.filter((x) => x.id !== fila?.id).reduce((t, x) => t + (Number(x.peso) || 0), 0));
+      const max = Math.max(0, r2(100 - otros));
+      const pintar = (recortar) => {
+        const v = Number(String(inp.value).replace(',', '.'));
+        if (recortar && v > max) { inp.value = String(max).replace('.', ','); aviso(`Máximo ${max}%: los otros indicadores ya suman ${otros}%.`, 'error'); }
+        nota.innerHTML = `Disponible <b>${max}%</b> · los otros indicadores suman ${otros}%`;
+        nota.className = 'ayuda disponible' + (max === 0 ? ' alerta' : '');
+      };
+      inp.addEventListener('input', () => pintar(true));
+      pintar(false);
+    };
+    if (await editar({ alAbrir, titulo: fila?.id ? 'Indicador' : 'Nuevo indicador', tabla: 'indicadores', campos: camposInd, fila, extra: { asignacion_id: asig.id, periodo_id: per.id }, validar: (d) => {
       if (!d.descripcion) throw new Error('Escribe la descripción.');
       const w = Number(d.peso);
       if (!(w > 0) || w > 100) throw new Error('El peso debe ser mayor que 0 y máximo 100.');
