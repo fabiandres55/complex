@@ -30,6 +30,11 @@ const main = () => $('#principal');
 
 // ---------------------------------------------------------------- Instalar (como Relax: Chrome crea la app sola)
 let instalador = null;
+// Bloqueo con huella: true cuando la persona ya se identificó en esta apertura de la app
+// (contraseña, huella o enlace de recuperación de contraseña). Al cerrar y volver a abrir, se pide otra vez.
+let desbloqueada = /type=recovery/.test(location.hash);
+const MIN_FUERA = 5; // minutos en segundo plano tras los que se vuelve a pedir la huella
+const claveBloqueo = () => 'bloqueo_' + E.sesion?.user?.id;
 const instalada = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); instalador = e; });
 window.addEventListener('appinstalled', () => { instalador = null; document.querySelectorAll('[data-instalar]').forEach((b) => b.remove()); aviso('Complex_ quedó instalada en tu equipo.'); });
@@ -348,6 +353,7 @@ function pantallaEntrar(modo = 'entrar') {
       if (E.db.modo !== 'real') E.db = await crearDbSupabase();
       await E.db.auth.entrarConHuella();
       pref('modo', 'real');
+      desbloqueada = true;
       await arrancarSesion();
     } catch (er) { err.textContent = er.message; } finally { bHuella.disabled = false; }
   });
@@ -374,6 +380,7 @@ function pantallaEntrar(modo = 'entrar') {
         await E.db.auth.signIn(usuario, d.clave);
       }
       pref('modo', 'real');
+      desbloqueada = true;
       await arrancarSesion();
       if (!registro) ofrecerHuella();
     } catch (er) {
@@ -381,6 +388,55 @@ function pantallaEntrar(modo = 'entrar') {
     } finally { b.disabled = false; }
   };
 }
+
+// ¿Esta persona pidió la huella al abrir Complex_ en este dispositivo?
+// Si nunca lo decidió: sí, cuando ya tiene una llave de acceso.
+async function pideHuella() {
+  if (E.db.modo !== 'real' || !window.PublicKeyCredential) return false;
+  let v = pref(claveBloqueo());
+  if (v === undefined) {
+    try { v = (await E.db.auth.huellas()).length > 0; } catch { return false; }
+    pref(claveBloqueo(), v);
+  }
+  return !!v;
+}
+
+function pantallaBloqueo() {
+  const app = $('#app');
+  delete app.dataset.armado;
+  app.innerHTML = `
+    <div class="entrada">
+      <div class="entrada-caja">
+        <div class="marca"><img class="logo-grande" src="img/logo-complex.svg" alt="Complex_"><p>🔒 Complex_ está bloqueada</p></div>
+        <button class="btn btn-primario btn-ancho" id="btn-desbloquear">👆 Desbloquear con huella</button>
+        <p class="error" id="err-bloqueo" role="alert"></p>
+        <div class="entrada-pie"><button class="btn-link" id="btn-otra-cuenta">Entrar con contraseña u otra cuenta</button></div>
+      </div>
+    </div>`;
+  const b = $('#btn-desbloquear');
+  const intentar = async (silencioso) => {
+    b.disabled = true;
+    $('#err-bloqueo').textContent = '';
+    try {
+      await E.db.auth.entrarConHuella(); // verificación real en el servidor (renueva la sesión)
+      desbloqueada = true;
+      await arrancarSesion();
+    } catch (e) { if (!silencioso) $('#err-bloqueo').textContent = e.message; }
+    finally { b.disabled = false; }
+  };
+  b.onclick = () => intentar(false);
+  $('#btn-otra-cuenta').onclick = salir;
+  intentar(true); // la pide de una vez; si el navegador exige un toque, queda el botón
+}
+
+// Al volver a la app después de MIN_FUERA minutos en segundo plano, se bloquea otra vez
+let fueraDesde = 0;
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'hidden') { fueraDesde = Date.now(); return; }
+  if (!fueraDesde || !E.sesion || !desbloqueada || Date.now() - fueraDesde < MIN_FUERA * 60000) return;
+  fueraDesde = 0;
+  if (await pideHuella()) { desbloqueada = false; pantallaBloqueo(); }
+});
 
 // Después de entrar con contraseña: ofrecer la huella una sola vez por persona y dispositivo (como las apps de bancos)
 async function ofrecerHuella() {
@@ -398,7 +454,7 @@ async function ofrecerHuella() {
 }
 
 async function activarHuella() {
-  try { await E.db.auth.registrarHuella(); aviso('Listo: la próxima vez entra con tu huella'); return true; }
+  try { await E.db.auth.registrarHuella(); pref(claveBloqueo(), true); aviso('Listo: Complex_ te pedirá la huella cada vez que la abras'); return true; }
   catch (e) { aviso(e.message, 'error'); return false; }
 }
 
@@ -497,6 +553,7 @@ async function perfil() {
       <h2>Entrar con huella</h2>
       <p class="ayuda">Entra a Complex_ con la huella o el rostro de tu celular, sin escribir la contraseña. Tu huella no sale del celular: Complex_ solo guarda una llave de acceso.</p>
       <div class="lista" data-huellas></div>
+      <label class="fila" data-bloqueo-fila hidden><input type="checkbox" data-bloqueo><span><b>Pedir la huella al abrir Complex_</b><small>Como las apps de bancos: cada vez que abras la app en este dispositivo, o vuelvas después de ${MIN_FUERA} minutos.</small></span></label>
       <button class="btn" data-activar-huella>👆 Activar en este dispositivo</button>
     </section>
     ${E.rol === 'admin' ? `<section class="tarjeta"><h2>Colegio</h2><a class="fila fila-boton" href="#/ajustes-colegio"><span>⚙️</span><span><b>Ajustes del colegio</b><small>Nombre, escala de notas</small></span></a></section>` : ''}
@@ -544,6 +601,11 @@ async function pintarHuellas(m) {
     <div class="fila"><span class="avatar">🔑</span><span class="crece"><b>${esc(h.friendly_name || 'Llave de acceso')}</b><small>Activada el ${fecha(h.created_at)}${h.last_used_at ? ' · usada ' + fechaHora(h.last_used_at) : ''}</small></span>
       <button class="btn btn-chico btn-peligro" data-quitar-huella="${esc(h.id)}">Quitar</button></div>`).join('') : '<p class="ayuda">Aún no la has activado.</p>';
   s.querySelector('[data-activar-huella]').hidden = !(await E.db.auth.huellaDisponible());
+  const chk = s.querySelector('[data-bloqueo]');
+  s.querySelector('[data-bloqueo-fila]').hidden = !l.length;
+  if (!l.length) pref(claveBloqueo(), false);
+  chk.checked = !!l.length && pref(claveBloqueo()) !== false;
+  chk.onchange = () => { pref(claveBloqueo(), chk.checked); aviso(chk.checked ? 'Complex_ te pedirá la huella al abrir' : 'Complex_ ya no te pedirá la huella al abrir'); };
   s.querySelector('[data-activar-huella]').onclick = async () => { if (await activarHuella()) pintarHuellas(m); };
   s.querySelectorAll('[data-quitar-huella]').forEach((b) => (b.onclick = async () => {
     if (!(await confirmar('¿Quitar esta llave?', 'Con ella ya no podrás entrar con huella en ese dispositivo. Podrás activarla de nuevo.', 'Quitar'))) return;
@@ -565,6 +627,8 @@ async function salir() {
 async function arrancarSesion() {
   E.sesion = await E.db.auth.session();
   if (!E.sesion) return navegar();
+  if (!desbloqueada && (await pideHuella())) return pantallaBloqueo();
+  desbloqueada = true;
   await cargarYo();
   const guardado = pref('colegio');
   if (E.colegios.some((c) => c.id === guardado)) await elegirColegio(guardado);
