@@ -1,6 +1,6 @@
 // Tablero (REA Phidias §1.3): accesos directos con lo pendiente de cada módulo.
-import { E, base, misAsignaciones } from '../estado.js';
-import { esc, fecha } from '../ui.js';
+import { E, base, misAsignaciones, perfiles } from '../estado.js';
+import { esc, fecha, fechaHora, nombre } from '../ui.js';
 import { contarNoLeidos } from './mensajeria.js';
 import { estadoCobro, dinero } from './tesoreria.js';
 
@@ -36,6 +36,19 @@ export async function pendientesAdmin() {
     ${tarjeta('#/procesos', '📋', abiertos.length, `Procesos abiertos · ${resp.filter((r) => r.terminado && abiertos.some((p) => p.id === r.proceso_id)).length} respuestas`)}
     <a class="pendiente ${vencido ? 'con-pendiente' : ''}" href="#/tesoreria?tab=cartera&vencidos=1"><span class="ic">💰</span><b>${dinero(vencido)}</b><span>Cartera vencida</span></a>
   </div>${htmlEventos(await proximosEventos())}`;
+}
+
+// Vista previa de los últimos 5 mensajes de la bandeja (Tablero de Phidias)
+export async function previaBandeja() {
+  const filas = (await E.db.select('mensaje_destinatarios', { eq: { colegio_id: E.colegio.id, perfil_id: E.yo.id } }).catch(() => [])).filter((d) => !d.eliminado && !d.archivado);
+  const ahoraIso = new Date().toISOString();
+  const msgs = (filas.length ? await E.db.select('mensajes', { in: { id: filas.map((d) => d.mensaje_id) }, order: 'creado_en desc' }).catch(() => []) : []).filter((x) => !x.expira_en || x.expira_en > ahoraIso).slice(0, 5);
+  await perfiles(msgs.map((x) => x.autor_id));
+  const leido = new Map(filas.map((d) => [d.mensaje_id, !!d.leido_en]));
+  return `<section class="tarjeta"><div class="tarjeta-cab"><h2>Bandeja de entrada</h2><span><a class="btn btn-chico" href="#/bandeja">Ver todas</a> <a class="btn btn-chico btn-primario" href="#/redactar">Redactar mensaje</a></span></div>
+    <p class="ayuda">Vista previa de los últimos 5 mensajes</p>
+    ${msgs.length ? `<div class="lista">${msgs.map((x) => `<a class="fila fila-boton ${leido.get(x.id) ? '' : 'no-leido'}" href="#/mensaje/${x.id}"><span class="avatar">${esc((nombre(E.perfiles.get(x.autor_id)) || '?').slice(0, 1))}</span><span class="crece"><b>${esc(x.asunto)}</b><small>${esc(nombre(E.perfiles.get(x.autor_id)) || '')} · ${fechaHora(x.creado_en)}</small></span></a>`).join('')}</div>` : '<p class="ayuda">No tienes mensajes.</p>'}
+  </section>`;
 }
 
 export async function pendientesProfesor() {

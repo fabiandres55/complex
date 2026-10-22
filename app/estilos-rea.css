@@ -277,3 +277,72 @@ input[type=color] { width: 56px !important; min-height: 40px !important; padding
 /* Logo de Complex_ */
 .logo-grande { width: 170px; height: auto; display: block; margin: 0 auto 4px; }
 .logo-img.logo-complex { padding: 1px; }
+
+/* Planilla: criterios → experiencias → actividades */
+.tabla-notas .fila-exp th { font-weight: 600; font-size: 12px; background: var(--fondo-2, rgba(127,127,127,.06)); }
+.tabla-notas .fila-exp small { display: block; font-weight: 400; color: var(--texto-2); }
+.tabla-notas th .insignia { display: inline-block; margin-left: 4px; font-size: 10px; padding: 0 5px; border-radius: 6px; background: rgba(127,127,127,.15); color: var(--texto-2); font-weight: 600; vertical-align: middle; }
+.tabla-notas tfoot .fila-est th, .tabla-notas tfoot .fila-est td { font-size: 12px; color: var(--texto-2); font-weight: 500; text-align: center; }
+.tabla-notas tfoot .fila-est th { text-align: left; }
+.tabla-notas tfoot .fila-est:first-child td, .tabla-notas tfoot .fila-est:first-child th { border-top: 2px solid var(--borde, rgba(127,127,127,.3)); }
+.tabla-notas select.nota-sel { width: 64px; min-height: 36px; padding: 4px; text-align: center; font-weight: 700; }
+.fila-check { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+.fila-check input { margin-top: 3px; width: 18px; height: 18px; flex: none; }
+.fila-check span { display: flex; flex-direction: column; }
+.fila-check small { color: var(--texto-2); font-weight: 400; }
+fieldset.tambien { border: 1px solid var(--borde, rgba(127,127,127,.3)); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+fieldset.tambien legend { font-weight: 600; font-size: 13px; padding: 0 6px; }
+.criterio.enfocado { outline: 2px solid var(--primario); }
+.criterio h3 small { color: var(--texto-2); font-weight: 500; }
+.tabla-escala input { width: 100%; min-width: 60px; }
+.seg-radio { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; }
+
+/* Fechas importantes, observaciones de boletín, remediales */
+.fechas-importantes summary { cursor: pointer; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.fechas-importantes table { margin-top: 10px; }
+.fechas-importantes th { text-align: left; font-weight: 600; }
+.tabla-obs textarea { width: 100%; min-width: 220px; resize: vertical; }
+.obs-celda { display: flex; gap: 6px; align-items: flex-start; }
+.tabla-obs textarea.guardado, .tabla-obs textarea.guardando { outline: 2px solid var(--ok, #2e9d5b); }
+.tabla-obs textarea.mal { outline: 2px solid var(--peligro, #c0392b); }
+
+/* Tareas: vínculo con la planilla, copias y foro */
+.planilla-vinculo h3 { margin: 0 0 8px; font-size: 15px; }
+.copia-grupo { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; border-top: 1px dashed var(--borde, rgba(127,127,127,.3)); }
+.copia-grupo:first-of-type { border-top: 0; }
+.foro .comentario { align-items: flex-start; }
+.foro .comentario p { margin: 4px 0 0; }
+
+/* Asistencia con tipos */
+.resumen-asistencia { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.resumen-asistencia .chip { cursor: pointer; border: 1px solid transparent; }
+.resumen-asistencia .chip.activo { border-color: var(--primario); font-weight: 700; }
+.fila-asistencia.con-tipos { flex-wrap: wrap; }
+.sel-asistencia { min-width: 180px; max-width: 100%; }
+.obs-asistencia { flex: 1 1 160px; min-width: 120px; }
+.hist-dia summary { cursor: pointer; font-size: 12px; color: var(--primario); }
+.hist-dia small { display: block; color: var(--texto-2); }
+
+/* Docencia: clases, administración de grupo, dirección de grupo */
+.rejilla-clases { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.clase-curso h2 { margin: 0; }
+.clase-curso .ayuda { margin: 2px 0 8px; }
+.grupo-av { font-size: 12px; font-weight: 800; }
+.acciones-grupo { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.ruta { font-size: 13px; color: var(--texto-2); margin: 0 0 8px; }
+.resumen-grupo .fila small { white-space: normal; }
+.fila.no-leido b { font-weight: 800; }
+
+/* El aviso de versión nueva va arriba para no tapar los botones fijos de abajo (Guardar) */
+.aviso.aviso-version { top: calc(env(safe-area-inset-top, 0px) + 64px); bottom: auto; }
+
+/* Información personal (ficha) */
+.ficha-cab { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.ficha-cab h2 { margin: 0; }
+.avatar-grande { width: 72px; height: 72px; font-size: 26px; }
+.tabla-ficha th { text-align: left; width: 40%; font-weight: 600; color: var(--texto-2); }
+.iconos-familia { display: flex; gap: 6px; font-size: 18px; margin-left: auto; padding-right: 8px; }
+
+/* Tipos de mensaje (REA Phidias §3.1): etiqueta con el color del tipo */
+.chip-tipo { background: color-mix(in srgb, var(--c) 16%, transparent); color: var(--texto); border: 1px solid color-mix(in srgb, var(--c) 55%, transparent); }
+.filtros-bandeja { margin: 8px 0; } .filtros-bandeja label { display: flex; gap: 6px; align-items: center; font-size: 14px; }

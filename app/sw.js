@@ -1,10 +1,10 @@
 // Service worker de Complex_: guarda la app para abrirla rápido y sin internet.
 // Los datos (Supabase) siempre van a la red.
-const VERSION = 'complex-20261021155711';
+const VERSION = 'complex-20261022052021';
 const ARCHIVOS = [
   './', './index.html', './estilos.css', './estilos-rea.css', './manifest.webmanifest', './img/icono.svg', './img/simbolo.svg', './img/logo-complex.svg',
   './js/app.js', './js/config.js', './js/db.js', './js/demo-semilla.js', './js/ui.js', './js/estado.js', './js/calculos.js',
-  './js/pantallas/comun.js', './js/pantallas/admin.js', './js/pantallas/profesor.js', './js/pantallas/familia.js', './js/pantallas/circulares.js', './js/pantallas/planeaciones.js', './js/pantallas/mensajeria.js', './js/pantallas/aula.js', './js/pantallas/calendario.js', './js/pantallas/tesoreria.js', './js/pantallas/comunidad.js', './js/pantallas/procesos.js', './js/pantallas/tablero.js', './js/pantallas/certificados.js', './js/pantallas/usuarios.js', './js/pantallas/horario.js', './js/pantallas/reportes.js', './js/pantallas/examenes.js', './js/pantallas/ayuda.js', './js/pantallas/carnet.js',
+  './js/pantallas/comun.js', './js/pantallas/admin.js', './js/pantallas/profesor.js', './js/pantallas/planilla.js', './js/pantallas/boletin_docente.js', './js/pantallas/notas_util.js', './js/pantallas/destinos.js', './js/pantallas/seguimientos.js', './js/pantallas/docencia.js', './js/pantallas/familia_perfil.js', './js/pantallas/familia.js', './js/pantallas/circulares.js', './js/pantallas/planeaciones.js', './js/pantallas/mensajeria.js', './js/pantallas/aula.js', './js/pantallas/calendario.js', './js/pantallas/tesoreria.js', './js/pantallas/comunidad.js', './js/pantallas/procesos.js', './js/pantallas/tablero.js', './js/pantallas/certificados.js', './js/pantallas/usuarios.js', './js/pantallas/horario.js', './js/pantallas/reportes.js', './js/pantallas/examenes.js', './js/pantallas/ayuda.js', './js/pantallas/carnet.js',
 ];
 
 self.addEventListener('install', (e) => {

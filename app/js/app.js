@@ -5,6 +5,11 @@ import { esc, $, aviso, ventana, leerForm, ROL, nombre, iniciales, etiquetarTabl
 import { APP_VERSION } from './config.js';
 import * as admin from './pantallas/admin.js';
 import * as profe from './pantallas/profesor.js';
+import * as planillaP from './pantallas/planilla.js';
+import * as boletinD from './pantallas/boletin_docente.js';
+import * as seguimientosP from './pantallas/seguimientos.js';
+import * as docencia from './pantallas/docencia.js';
+import * as famPerfil from './pantallas/familia_perfil.js';
 import * as familia from './pantallas/familia.js';
 import * as circulares from './pantallas/circulares.js';
 import * as planeaciones from './pantallas/planeaciones.js';
@@ -64,8 +69,19 @@ const RUTAS = [
   ['personas', (p) => admin.personas(main(), p)],
   ['curso/:id', (p) => admin.curso(main(), p)],
   ['ajustes-colegio', () => admin.ajustesColegio(main())],
-  ['clases', () => profe.clases(main())],
-  ['notas/:asig', (p) => profe.planilla(main(), p)],
+  ['clases', () => docencia.clases(main())],
+  ['grupo/:asig', (p) => docencia.grupo(main(), p)],
+  ['direccion', () => docencia.direccion(main())],
+  ['consolidado/:asig', (p) => docencia.consolidado(main(), p)],
+  ['info-personal', (p) => famPerfil.infoPersonal(main(), p)],
+  ['edocs', () => famPerfil.edocs(main())],
+  ['obligaciones', () => famPerfil.obligaciones(main())],
+  ['bandeja-hijo', () => famPerfil.bandejaHijo(main())],
+  ['notas/:asig', (p) => planillaP.planilla(main(), p)],
+  ['observaciones-boletin/:asig', (p) => boletinD.observaciones(main(), p)],
+  ['remediales/:asig', (p) => boletinD.remediales(main(), p)],
+  ['seguimientos', () => seguimientosP.lista(main())],
+  ['seguimiento/:id', (p) => seguimientosP.seguimiento(main(), p)],
   ['asistencia/:asig', (p) => profe.asistencia(main(), p)],
   ['observador/:est', (p) => familia.observador(main(), p)],
   ['estudiante/:est', (p) => familia.estudiante(main(), p)],
@@ -131,33 +147,35 @@ async function navegar() {
     console.error(err);
     if (yo === navegando) main().innerHTML = `<div class="vacio"><p>No se pudo cargar: ${esc(err.message)}</p><button class="btn" onclick="location.reload()">Reintentar</button></div>`;
   }
-  if (yo === navegando) { main().scrollTop = 0; window.scrollTo(0, 0); etiquetarTablas(main()); }
+  if (yo === navegando) { main().scrollTop = 0; window.scrollTo(0, 0); etiquetarTablas(main()); const bx = $('#btn-exportar'); if (bx) bx.hidden = !main().querySelector('table'); }
 }
 
 // ---------------------------------------------------------------- Armazón (REA Phidias §1.2)
 // Menú lateral izquierdo agrupado (Tablero · Comunicación · Comunidad · Academia · Perfil),
 // con buscador "Filtrar menú" y, para acudientes, pestañas de persona (yo + cada hijo).
 const COMUNICACION = { t: 'Comunicación', ic: '💬', items: [['bandeja', 'Bandeja de entrada', 'noLeidos'], ['redactar', 'Redactar mensaje'], ['enviados', 'Enviados'], ['cartelera', 'Cartelera'], ['circulares', 'Circulares']] };
+// Orden como Phidias: Tablero · Perfil · Comunicación · Comunidad · … · Pasarelas (al final)
 function menuDe() {
   const lista = menuBase();
   const i = lista.findIndex((g) => g.t === 'Perfil');
-  const pas = { r: 'pasarelas', ic: '⛓', t: 'Pasarelas' };
-  if (i >= 0) lista.splice(i, 0, pas); else lista.push(pas);
+  if (i > 1) lista.splice(1, 0, ...lista.splice(i, 1));
+  lista.push({ r: 'pasarelas', ic: '⛓', t: 'Pasarelas' });
   return lista;
 }
 function menuBase() {
   const est = personaActiva();
   const hist = est ? [[`estudiante/${est}?tab=notas`, 'Historial de notas'], [`estudiante/${est}?tab=asistencia`, 'Asistencia']] : [];
   const tablero = { r: 'inicio', ic: '▦', t: 'Tablero' };
-  const perfilG = (extra = []) => ({ t: 'Perfil', ic: '👤', items: [['perfil', 'Mi cuenta y ajustes'], ...extra, ['ayuda', 'Ayuda']] });
+  const perfilG = (extra = []) => ({ t: 'Perfil', ic: '👤', items: [['info-personal', 'Información personal'], ...(E.rol === 'acudiente' || E.rol === 'estudiante' ? [['edocs', 'E-docs']] : []), ['perfil', 'Mi cuenta y ajustes'], ...extra, ['ayuda', 'Ayuda']] });
   if (E.rol === 'admin') return [tablero, COMUNICACION,
-    { t: 'Comunidad', ic: '👥', items: [['calendario', 'Calendario'], ['personas', 'Personas'], ['ausencias', 'Ausencias reportadas'], ['procesos', 'Procesos en línea'], ['archivos', 'Archivos']] },
+    { t: 'Comunidad', ic: '👥', items: [['calendario', 'Calendario'], ['personas', 'Personas'], ['seguimientos', 'Seguimientos'], ['ausencias', 'Ausencias reportadas'], ['procesos', 'Procesos en línea'], ['archivos', 'Archivos']] },
     { t: 'Académico', ic: '🎓', items: [['estructura', 'Estructura del colegio'], ['horario', 'Horarios'], ['planeaciones', 'Planeaciones'], ['reportes', 'Reportes']] },
     { t: 'Tesorería', ic: '💰', items: [['tesoreria?tab=cartera', 'Cartera'], ['tesoreria?tab=facturar', 'Facturar'], ['tesoreria?tab=pagos', 'Pagos'], ['tesoreria?tab=conceptos', 'Conceptos']] },
     perfilG([['ajustes-colegio', 'Ajustes del colegio']])];
   if (E.rol === 'profesor') return [tablero, COMUNICACION,
-    { t: 'Comunidad', ic: '👥', items: [['calendario', 'Calendario'], ['procesos', 'Procesos en línea'], ['archivos', 'Archivos']] },
-    { t: 'Academia', ic: '🎓', items: [['aula', 'Aula'], ['horario', 'Mi horario'], ['clases', 'Notas y asistencia'], ['planeaciones', 'Planeaciones']] },
+    { t: 'Comunidad', ic: '👥', items: [['calendario', 'Calendario'], ['seguimientos', 'Seguimientos'], ['procesos', 'Procesos en línea'], ['archivos', 'Archivos globales']] },
+    { t: 'Docencia', ic: '🧑‍🏫', items: [['direccion', 'Dirección de grupo'], ['clases', 'Clases']] },
+    { t: 'Academia', ic: '🎓', items: [['aula', 'Aula'], ['horario', 'Mi horario'], ['planeaciones', 'Planeaciones']] },
     perfilG()];
   if (E.rol === 'estudiante') return [tablero, COMUNICACION,
     { t: 'Comunidad', ic: '👥', items: [['calendario', 'Calendario'], [`estudiante/${E.yo.id}?tab=observador`, 'Seguimientos'], ['procesos', 'Procesos en línea'], ['archivos', 'Archivos']] },
@@ -165,14 +183,15 @@ function menuBase() {
     perfilG()];
   // acudiente
   if (viendoHijo()) return [tablero,
-    { t: 'Academia', ic: '🎓', items: [['aula', 'Aula'], ['horario', 'Horario'], ...hist] },
-    { t: 'Comunidad', ic: '👥', items: [['calendario', 'Calendario'], [`estudiante/${est}?tab=observador`, 'Seguimientos'], ['procesos', 'Procesos en línea'], ['archivos', 'Archivos']] },
-    { t: 'Perfil', ic: '👤', items: [[`estudiante/${est}?tab=ficha`, 'Ficha médica']] },
-    { t: 'Comunicación', ic: '💬', items: [['bandeja', 'Bandeja de entrada', 'noLeidos'], ['circulares', 'Circulares']] },
-    { t: 'Tesorería', ic: '💰', items: [[`estado-cuenta/${est}`, 'Estado de cuenta']] }];
-  return [tablero, COMUNICACION, { t: 'Comunidad', ic: '👥', items: [['calendario', 'Calendario'], ['procesos', 'Procesos en línea'], ['archivos', 'Archivos']] }, { t: 'Tesorería', ic: '💰', items: [['tesoreria', 'Consolidado']] }, perfilG()];
+    { t: 'Perfil', ic: '👤', items: [['info-personal', 'Información personal'], [`estudiante/${est}?tab=ficha`, 'Ficha médica'], ['edocs', 'E-docs']] },
+    { t: 'Comunicación', ic: '💬', items: [['bandeja-hijo', 'Bandeja de entrada del estudiante'], ['circulares', 'Circulares']] },
+    { t: 'Comunidad', ic: '👥', items: [['calendario', 'Calendario'], [`estudiante/${est}?tab=observador`, 'Seguimientos'], ['procesos', 'Procesos en línea'], ['archivos', 'Archivos globales']] },
+    { t: 'Academia', ic: '🎓', items: [['aula', 'Aula'], [`estudiante/${est}?tab=notas`, 'Historial'], ['horario', 'Horario'], [`estudiante/${est}?tab=asistencia`, 'Asistencia']] },
+    { t: 'Matrícula', ic: '🎒', items: [['obligaciones', 'Obligaciones']] },
+    { t: 'Tesorería', ic: '💰', items: [[`estado-cuenta/${est}`, 'Consolidado']] }];
+  return [tablero, perfilG(), COMUNICACION, { t: 'Comunidad', ic: '👥', items: [['calendario', 'Calendario'], ['procesos', 'Procesos'], ['archivos', 'Archivos globales']] }, { t: 'Matrícula', ic: '🎒', items: [['obligaciones', 'Obligaciones']] }, { t: 'Tesorería', ic: '💰', items: [['tesoreria', 'Consolidado']] }];
 }
-const SECCION = { 'curso/:id': 'estructura', 'notas/:asig': 'clases', 'asistencia/:asig': 'clases', 'circular/:id': 'circulares', 'mensaje/:id': 'bandeja', 'aula/:asig': 'aula', 'tarea/:id': 'aula', 'examen/:id': 'aula', 'estado-cuenta/:est': 'tesoreria', 'proceso/:id': 'procesos', 'proceso/:id/respuestas': 'procesos' };
+const SECCION = { 'curso/:id': 'estructura', 'notas/:asig': 'clases', 'asistencia/:asig': 'clases', 'circular/:id': 'circulares', 'mensaje/:id': 'bandeja', 'aula/:asig': 'aula', 'tarea/:id': 'aula', 'examen/:id': 'aula', 'estado-cuenta/:est': 'tesoreria', 'proceso/:id': 'procesos', 'proceso/:id/respuestas': 'procesos', 'seguimiento/:id': 'seguimientos', 'grupo/:asig': 'clases', 'consolidado/:asig': 'clases', 'observaciones-boletin/:asig': 'clases', 'remediales/:asig': 'clases' };
 
 function itemActivo(ruta, patron) {
   const h = (location.hash || '#/inicio').slice(2);
@@ -190,6 +209,7 @@ function pintarArmazon(patron) {
       <header class="barra">
         <button class="btn-icono btn-menu" id="btn-menu" aria-label="Abrir menú" aria-controls="menu" aria-expanded="false">☰</button>
         <button class="barra-colegio" id="btn-colegio" title="Cambiar de colegio"></button>
+        <button class="btn-icono" id="btn-exportar" title="Exportar esta pantalla a Excel (CSV)" aria-label="Exportar a Excel" hidden>⬇</button>
         <button class="chip-rol" id="btn-rol"></button>
       </header>
       <div class="menu-fondo" id="menu-fondo"></div>
@@ -200,6 +220,7 @@ function pintarArmazon(patron) {
       </div>`;
     $('#btn-colegio').onclick = () => { if (E.colegios.length > 1 || E.roles.includes('admin')) { E.colegio = null; navegar(); } };
     $('#btn-rol').onclick = elegirRol;
+    $('#btn-exportar').onclick = exportarPantalla;
     $('#btn-menu').onclick = () => abrirMenu(!app.classList.contains('menu-abierto'));
     $('#menu-fondo').onclick = () => abrirMenu(false);
     $('#menu').addEventListener('click', (e) => {
@@ -445,12 +466,14 @@ async function perfil() {
     </section>
     <section class="tarjeta">
       ${E.roles.length > 1 ? `<button class="fila fila-boton" id="btn-cambiar-rol"><span>🔁</span><span><b>Ver como…</b><small>Ahora: ${ROL[E.rol]}</small></span></button>` : ''}
+      <button class="fila fila-boton" id="btn-cambiar-clave"><span>🔑</span><span><b>Cambiar contraseña</b></span></button>
       <button class="fila fila-boton" id="btn-cambiar-colegio"><span>🏫</span><span><b>Cambiar de colegio</b></span></button>
       ${instalada() ? '' : '<button class="fila fila-boton" data-instalar><span>📲</span><span><b>Instalar la app</b><small>Android, iPhone y computador</small></span></button>'}
       <button class="fila fila-boton peligro" id="btn-salir"><span>🚪</span><span><b>Cerrar sesión</b></span></button>
     </section>
     <p class="nota-pie">Complex_ v${esc(APP_VERSION)}${E.db.modo === 'demo' ? ' · modo demo' : ''}</p>`;
   m.querySelectorAll('[data-tema]').forEach((b) => (b.onclick = () => { pref('tema', b.dataset.tema); aplicarTema(); perfil(); }));
+  $('#btn-cambiar-clave')?.addEventListener('click', () => cambiarClave(false));
   $('#btn-guardar-perfil').onclick = async () => {
     const d = leerForm($('#f-perfil'));
     try {
@@ -501,9 +524,11 @@ async function arrancar() {
     console.warn(e);
     E.db = crearDbDemo();
   }
-  E.db.auth.onChange(async () => {
+  E.db.auth.onChange(async (evento) => {
     const s = await E.db.auth.session();
-    if (!!s !== !!E.sesion) arrancarSesion();
+    if (!!s !== !!E.sesion) await arrancarSesion();
+    // Llegó desde el enlace de "Olvidé mi contraseña": pedir la contraseña nueva
+    if (evento === 'PASSWORD_RECOVERY') cambiarClave(true);
   });
   await arrancarSesion();
   if (new URLSearchParams(location.search).has('instalar') && !instalada()) {
@@ -530,6 +555,52 @@ async function arrancar() {
       document.body.appendChild(b);
     });
   }
+}
+
+// Exportar a Excel (CSV) las tablas de la pantalla actual, como "Exportar xls / csv" de Phidias.
+// Los campos de edición se exportan con su valor; separador ";" y coma decimal (Excel en español).
+function exportarPantalla() {
+  const tablas = [...main().querySelectorAll('table')].filter((t) => t.offsetParent !== null && !t.closest('.fechas-importantes, details:not([open])'));
+  if (!tablas.length) return aviso('Esta pantalla no tiene tablas para exportar.', 'error');
+  const valor = (celda) => {
+    const campo = celda.querySelector('input, select, textarea');
+    let t = campo ? (campo.tagName === 'SELECT' ? campo.selectedOptions[0]?.text || '' : campo.value) : celda.innerText;
+    t = t.replace(/\s+/g, ' ').trim();
+    if (/^-?\d+\.\d+$/.test(t)) t = t.replace('.', ',');
+    if (/^[=+\-@\t\r]/.test(t) && !/^-?\d+([.,]\d+)?$/.test(t)) t = "'" + t; // que Excel no lo tome como fórmula
+    return '"' + t.replace(/"/g, '""') + '"';
+  };
+  const lineas = [];
+  for (const [i, t] of tablas.entries()) {
+    if (i) lineas.push('');
+    for (const tr of t.querySelectorAll('tr')) lineas.push([...tr.children].map(valor).join(';'));
+  }
+  const titulo = (main().querySelector('h1')?.innerText || 'complex').replace(/[^\w\sáéíóúñÁÉÍÓÚÑ-]/g, '').trim().replace(/\s+/g, '_').slice(0, 60) || 'complex';
+  const url = URL.createObjectURL(new Blob(['\ufeff' + lineas.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+  const a = document.createElement('a'); a.href = url; a.download = `${titulo}.csv`; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  aviso('Exportado a Excel (CSV)');
+}
+
+// Cambiar contraseña (Perfil) o crear una nueva al llegar desde el enlace de recuperación
+export async function cambiarClave(desdeEnlace) {
+  await ventana({
+    titulo: desdeEnlace ? 'Crea tu contraseña nueva' : 'Cambiar contraseña',
+    html: `<div class="form">
+      ${desdeEnlace ? '<p class="ayuda">Entraste con el enlace de recuperación. Escribe tu contraseña nueva.</p>' : ''}
+      <label>Contraseña nueva<input type="password" name="clave1" autocomplete="new-password" minlength="8"></label>
+      <label>Repítela<input type="password" name="clave2" autocomplete="new-password" minlength="8"></label>
+      <p class="ayuda">Mínimo 8 caracteres. Usa letras y números.</p></div>`,
+    botones: [{ texto: 'Cancelar' }, { texto: 'Guardar', antes: async (caja) => {
+      const a = caja.querySelector('[name=clave1]').value, b2 = caja.querySelector('[name=clave2]').value;
+      if (a.length < 8) throw new Error('La contraseña debe tener al menos 8 caracteres.');
+      if (!/[A-Za-zÀ-ÿ]/.test(a) || !/\d/.test(a)) throw new Error('Usa letras y números.');
+      if (a !== b2) throw new Error('Las dos contraseñas no coinciden.');
+      await E.db.auth.updatePassword(a);
+      aviso('Contraseña cambiada');
+      return true;
+    } }],
+  });
 }
 
 window.complex = { E, ir }; // para depurar desde la consola

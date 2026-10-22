@@ -42,10 +42,11 @@ export async function certificado(m, p) {
       E.db.select('recuperaciones', { eq: { estudiante_id: p.est } }),
     ]);
     const nota = Object.fromEntries(cal.map((c) => [c.actividad_id, c.valor]));
+    const exps = inds.length ? await E.db.select('experiencias', { in: { indicador_id: inds.map((x) => x.id) } }) : [];
     const filas = asigs.map((a) => {
       const pp = {};
       for (const per of b.periodos) {
-        const base0 = notaConIndicadores(inds.filter((x) => x.asignacion_id === a.id && x.periodo_id === per.id), acts.filter((x) => x.asignacion_id === a.id && x.periodo_id === per.id), nota);
+        const base0 = notaConIndicadores(inds.filter((x) => x.asignacion_id === a.id && x.periodo_id === per.id), acts.filter((x) => x.asignacion_id === a.id && x.periodo_id === per.id), nota, exps);
         pp[per.id] = definitiva(base0, recs.find((r) => r.asignacion_id === a.id && r.periodo_id === per.id)?.nota).valor;
       }
       return { a, materia: b.materiaPorId.get(a.materia_id), pp, final: notaFinal(b.periodos, pp) };

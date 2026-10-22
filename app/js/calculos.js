@@ -30,14 +30,33 @@ export function notaPeriodo(actividades, notasPorActividad) {
 // cada indicador = promedio ponderado de sus actividades; el periodo = promedio ponderado
 // (peso del indicador; si ninguno tiene peso, simple) de los indicadores con nota.
 // Si la materia no tiene indicadores en el periodo, se usa notaPeriodo() con todas las actividades.
-export function notaIndicador(ind, actividades, notasPorActividad) {
-  return notaPeriodo(actividades.filter((a) => a.indicador_id === ind.id), notasPorActividad);
+// Con EXPERIENCIAS (Phidias: Criterio → Experiencias → Actividades): el criterio = promedio ponderado
+// (por el % de cada experiencia) de sus experiencias con nota; cada experiencia = promedio de sus actividades.
+// Las actividades del criterio que no tienen experiencia forman un grupo aparte sin peso propio.
+function promedioPonderado(pares) {
+  const con = pares.filter(([v]) => v != null);
+  if (!con.length) return null;
+  const pesos = con.reduce((t, [, w]) => t + (w > 0 ? w : 0), 0);
+  if (pesos > 0) return con.filter(([, w]) => w > 0).reduce((t, [v, w]) => t + v * w, 0) / pesos;
+  return con.reduce((t, [v]) => t + v, 0) / con.length;
 }
-export function notaConIndicadores(indicadores, actividades, notasPorActividad) {
+export function notaExperiencia(exp, actividades, notasPorActividad) {
+  return notaPeriodo(actividades.filter((a) => a.experiencia_id === exp.id), notasPorActividad);
+}
+export function notaIndicador(ind, actividades, notasPorActividad, experiencias = []) {
+  const delInd = actividades.filter((a) => a.indicador_id === ind.id);
+  const exps = (experiencias || []).filter((x) => x.indicador_id === ind.id);
+  if (!exps.length) return notaPeriodo(delInd, notasPorActividad);
+  const pares = exps.map((x) => [notaExperiencia(x, delInd, notasPorActividad), Number(x.porcentaje) || 0]);
+  const sueltas = delInd.filter((a) => !a.experiencia_id);
+  if (sueltas.length) pares.push([notaPeriodo(sueltas, notasPorActividad), 0]);
+  return promedioPonderado(pares);
+}
+export function notaConIndicadores(indicadores, actividades, notasPorActividad, experiencias = []) {
   if (!indicadores?.length) return notaPeriodo(actividades, notasPorActividad);
   let suma = 0, pesos = 0; const simples = [];
   for (const ind of indicadores) {
-    const v = notaIndicador(ind, actividades, notasPorActividad);
+    const v = notaIndicador(ind, actividades, notasPorActividad, experiencias);
     if (v == null) continue;
     simples.push(v);
     const w = Number(ind.peso) || 0;
@@ -87,3 +106,40 @@ export function resumenAsistencia(filas) {
   for (const f of filas) r[f.estado] = (r[f.estado] || 0) + 1;
   return r;
 }
+
+// Estadísticas de una actividad (como Phidias): evaluados, perdidos (< nota de aprobación), promedio y desviación.
+export function estadisticas(valores, colegio) {
+  const v = valores.filter((x) => x != null).map(Number);
+  const ap = Number(colegio?.nota_aprobacion ?? 3);
+  if (!v.length) return { n: 0, perdidos: 0, promedio: null, desv: null };
+  const prom = v.reduce((t, x) => t + x, 0) / v.length;
+  const desv = Math.sqrt(v.reduce((t, x) => t + (x - prom) ** 2, 0) / v.length);
+  return { n: v.length, perdidos: v.filter((x) => redondear(x, colegio?.decimales ?? 1) < ap).length, promedio: prom, desv };
+}
+
+// Escala cualitativa del colegio (S/A/BS/BJ…): cada sigla tiene su valor numérico
+export const escalaCualitativa = (colegio) => colegio?.escala_tipo === 'cualitativa' && Array.isArray(colegio?.escala) && colegio.escala.length ? colegio.escala : null;
+// Sigla para un valor: la de valor más cercano
+// Con "desde" (rango de cada sigla): la sigla de mayor "desde" que no supere la nota. Sin "desde": la de valor más cercano.
+export function siglaDe(valor, colegio) {
+  const esc = escalaCualitativa(colegio);
+  if (!esc || valor == null) return null;
+  if (esc.every((x) => x.desde != null && x.desde !== '')) {
+    const v = redondear(valor, colegio?.decimales ?? 1);
+    const orden = [...esc].sort((x, y) => Number(y.desde) - Number(x.desde));
+    return orden.find((x) => v >= Number(x.desde)) || orden.at(-1);
+  }
+  return [...esc].sort((x, y) => Math.abs(x.valor - valor) - Math.abs(y.valor - valor))[0];
+}
+
+// Ventanas de fechas del colegio (Phidias: "Fechas importantes"). Sin fechas = siempre abierta.
+// hoy: 'AAAA-MM-DD' (fecha local). Devuelve { abierta, texto }.
+export function enVentana(desde, hasta, hoy) {
+  const abierta = (!desde || hoy >= desde) && (!hasta || hoy <= hasta);
+  const f = (x) => x.split('-').reverse().join('/');
+  const texto = !desde && !hasta ? 'Sin límite de fechas' : desde && hasta ? `del ${f(desde)} al ${f(hasta)}` : desde ? `desde el ${f(desde)}` : `hasta el ${f(hasta)}`;
+  return { abierta, texto, definida: !!(desde || hasta) };
+}
+
+// Para mostrar (no para campos de edición): la sigla si el colegio usa escala cualitativa; si no, el número.
+export const verNotaEscala = (v, colegio) => (v == null ? '—' : escalaCualitativa(colegio) ? siglaDe(v, colegio)?.sigla ?? mostrarNota(v, colegio) : mostrarNota(v, colegio));

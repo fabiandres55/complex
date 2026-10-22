@@ -32,6 +32,8 @@ async function cargarItems(b) {
   }
   const todas = [...new Set(grupos.flatMap((g) => g.asigs))];
   const tareas = todas.length ? await E.db.select('tareas', { in: { asignacion_id: todas } }) : [];
+  // Exámenes (capa propia por persona, como Phidias: "examenes (NOMBRE)")
+  const examenes = todas.length ? (await E.db.select('examenes', { in: { asignacion_id: todas } }).catch(() => [])).filter((x) => (E.rol === 'profesor' || (x.publicado && new Date(x.abre) <= new Date())) && (x.cierra || x.abre)) : [];
   grupos.forEach((g, i) => {
     const c = COLOR_TAREAS[i % COLOR_TAREAS.length];
     capas.push({ id: 'ta_' + g.id, nombre: g.nombre, color: c });
@@ -40,7 +42,35 @@ async function cargarItems(b) {
       items.push({ tipo: 'tarea', capa: 'ta_' + g.id, color: c, titulo: '📝 ' + t.titulo, cuando: t.entrega_en, todo: false, dato: t,
         sub: (b.materiaPorId.get(a?.materia_id)?.nombre || '') + (E.rol === 'profesor' ? ' · ' + (b.cursoPorId.get(a?.curso_id)?.nombre || '') : '') });
     }
+    const exG = examenes.filter((x) => g.asigs.includes(x.asignacion_id));
+    if (exG.length) {
+      const cE = COLOR_TAREAS[(i + 3) % COLOR_TAREAS.length];
+      capas.push({ id: 'ex_' + g.id, nombre: g.nombre.replace(/^Tareas/, 'Exámenes').replace(/^Mis tareas/, 'Mis exámenes'), color: cE });
+      for (const x of exG) {
+        const a = b.asignacionPorId.get(x.asignacion_id);
+        items.push({ tipo: 'examen', capa: 'ex_' + g.id, color: cE, titulo: '🧪 ' + x.titulo, cuando: x.cierra || x.abre, todo: false, dato: x,
+          sub: (b.materiaPorId.get(a?.materia_id)?.nombre || '') + (x.cierra ? ' · fecha límite' : ' · disponible') });
+      }
+    }
   });
+  // Mensajes "marcados en el calendario" (REA Phidias): los que recibí y los que envié
+  const recibidos = (await E.db.select('mensaje_destinatarios', { eq: { perfil_id: E.yo.id } }).catch(() => [])).filter((d) => !d.eliminado).map((d) => d.mensaje_id);
+  const [deOtros, mios] = await Promise.all([
+    recibidos.length ? E.db.select('mensajes', { in: { id: recibidos } }).catch(() => []) : [],
+    E.db.select('mensajes', { eq: { autor_id: E.yo.id } }).catch(() => []),
+  ]);
+  const ahoraIso = new Date().toISOString();
+  const conEvento = [...new Map([...deOtros, ...mios].filter((x) => x.evento_inicio && (!x.expira_en || x.expira_en > ahoraIso || x.autor_id === E.yo.id)).map((x) => [x.id, x])).values()];
+  if (conEvento.length) {
+    // como Phidias: cada tipo de mensaje es una capa con su color
+    const tiposMsg = await E.db.select('tipos_mensaje', { eq: { colegio_id: E.colegio.id }, order: 'orden' }).catch(() => []);
+    for (const x of conEvento) {
+      const tm = tiposMsg.find((t) => t.id === x.tipo_id);
+      const capa = tm ? 'msg-' + tm.id : 'msg', color = tm?.color || '#7a3fd1';
+      if (!capas.some((k) => k.id === capa)) capas.push({ id: capa, nombre: tm?.nombre || 'Mensajes', color });
+      items.push({ tipo: 'mensaje', capa, color, titulo: '✉️ ' + x.asunto, cuando: x.evento_inicio, todo: x.evento_todo_el_dia !== false, dato: x, sub: tm?.nombre || 'Mensaje' });
+    }
+  }
   return { items, capas };
 }
 
@@ -131,6 +161,8 @@ function conectarItems(raiz, lista, recargar) {
     const x = lista.find((i) => i.dato.id === el.dataset.item);
     if (!x) return;
     if (x.tipo === 'tarea') { location.hash = '#/tarea/' + x.dato.id; document.querySelector('.ventana')?.remove(); return; }
+    if (x.tipo === 'examen') { location.hash = '#/examen/' + x.dato.id; document.querySelector('.ventana')?.remove(); return; }
+    if (x.tipo === 'mensaje') { location.hash = '#/mensaje/' + x.dato.id; document.querySelector('.ventana')?.remove(); return; }
     const ev = x.dato;
     const r = await ventana({
       titulo: ev.titulo,

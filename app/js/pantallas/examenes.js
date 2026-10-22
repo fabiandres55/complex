@@ -4,6 +4,7 @@
 import { E, base, perfiles, personaActiva } from '../estado.js';
 import { esc, aviso, ventana, leerForm, confirmar, nombre, nombreLista, vacio, fecha, fechaHora } from '../ui.js';
 import { cabecera, camposHTML } from './comun.js';
+import { destinosDe, crearActividad, gruposHermanos } from './destinos.js';
 import { mostrarNota, desempeno } from '../calculos.js';
 
 const TIPOS = { unica: 'Única respuesta', vf: 'Verdadero / Falso', abierta: 'Respuesta abierta' };
@@ -49,6 +50,11 @@ async function editor(b, a, ex) {
     entregados = ints.filter((i) => i.entregado_en).length;
   }
   const per = b.periodos.find((p) => !p.cerrado) || b.periodos.at(-1);
+  // Vínculo con la planilla y copias en otros grupos (REA Phidias)
+  const vinculada = ex?.actividad_id ? (await E.db.select('actividades', { eq: { id: ex.actividad_id } }))[0] : null;
+  const hermanos = ex ? [] : gruposHermanos(b, a);
+  const cacheDest = new Map();
+  const cargarDestinos = async (asigId, perId) => { const k = asigId + '|' + perId; if (!cacheDest.has(k)) cacheDest.set(k, perId ? await destinosDe(asigId, perId) : { destinos: [] }); return cacheDest.get(k).destinos; };
   const pintar = (caja) => {
     caja.querySelector('[data-preguntas]').innerHTML = x.preguntas.map((q, i) => `
       <fieldset class="paso-editor" data-q="${i}">
@@ -89,9 +95,38 @@ async function editor(b, a, ex) {
       { name: 'duracion_min', label: 'Duración en minutos (opcional)', tipo: 'number' },
       { name: 'mostrar_resultado', label: 'Mostrar la nota al estudiante al entregar', tipo: 'checkbox', def: x.mostrar_resultado },
       { name: 'publicado', label: 'Publicado (los estudiantes lo ven)', tipo: 'checkbox', def: !!x.publicado },
-    ], { ...x, abre: local(x.abre || new Date().toISOString()), cierra: local(x.cierra) }) + (entregados ? `<p class="aviso-caja">⚠️ ${entregados} estudiante(s) ya entregaron. Si cambias preguntas u opciones, sus notas NO se recalculan.</p>` : '') + '<h3 class="sub">Preguntas</h3><div data-preguntas></div><button class="btn" data-q-nueva>＋ Pregunta</button>',
+    ], { ...x, abre: local(x.abre || new Date().toISOString()), cierra: local(x.cierra) }) + (entregados ? `<p class="aviso-caja">⚠️ ${entregados} estudiante(s) ya entregaron. Si cambias preguntas u opciones, sus notas NO se recalculan.</p>` : '') + (vinculada ? `<section class="tarjeta planilla-vinculo"><h3>Calificación en la planilla</h3><p class="ayuda">Vinculado a la actividad <b>${esc(vinculada.nombre)}</b> (${Number(vinculada.porcentaje)}%). La nota del examen pasa sola a la planilla.</p></section>`
+        : `<section class="tarjeta planilla-vinculo"><h3>Calificación en la planilla</h3>
+          <label>Experiencia / criterio<select name="destino"><option value="">No crear evaluación</option></select></label>
+          <label>Peso (%)<input name="peso" inputmode="decimal" autocomplete="off"><small class="ayuda disponible" data-disp></small></label>
+          <p class="ayuda">Al guardar se crea la actividad en la planilla y la nota del examen pasa sola.</p></section>`)
+      + (hermanos.length ? `<fieldset class="tambien"><legend>Crear copia en (las copias son independientes del original)</legend>${hermanos.map((h) => `<div class="copia-grupo" data-h="${h.id}"><label class="fila-check"><input type="checkbox" name="copia" value="${h.id}"> <span><b>${esc(b.cursoPorId.get(h.curso_id)?.nombre || '')}</b></span></label><label>Experiencia / criterio<select data-h-destino><option value="">No crear evaluación</option></select></label></div>`).join('')}</fieldset>` : '')
+      + '<h3 class="sub">Preguntas</h3><div data-preguntas></div><button class="btn" data-q-nueva>＋ Pregunta</button>',
     alAbrir: (caja) => {
       pintar(caja);
+      // Destinos de la planilla (como en las tareas)
+      const perSel = caja.querySelector('[name=periodo_id]');
+      const sel = caja.querySelector('[name=destino]');
+      const peso = caja.querySelector('[name=peso]');
+      const disp = caja.querySelector('[data-disp]');
+      const llenar = (s2, ds) => { const v = s2.value; s2.innerHTML = '<option value="">No crear evaluación</option>' + ds.map((d) => `<option value="${esc(d.k)}" ${d.disponible === 0 ? 'disabled' : ''}>${esc(d.t)} · disponible ${d.disponible}%</option>`).join(''); if ([...s2.options].some((o) => o.value === v && !o.disabled)) s2.value = v; };
+      const pintarDisp = async (recortar) => {
+        if (!sel) return;
+        const d = (await cargarDestinos(a.id, perSel.value)).find((x2) => x2.k === sel.value);
+        peso.closest('label').hidden = !d;
+        if (!d) { disp.textContent = ''; return; }
+        if (!peso.value) peso.value = String(d.disponible).replace('.', ',');
+        if (recortar && Number(String(peso.value).replace(',', '.')) > d.disponible) { peso.value = String(d.disponible).replace('.', ','); aviso(`Máximo ${d.disponible}% en ${d.t}.`, 'error'); }
+        disp.innerHTML = `Disponible <b>${d.disponible}%</b> en ${esc(d.t)}`;
+      };
+      const recargarDest = async () => {
+        if (sel) { llenar(sel, await cargarDestinos(a.id, perSel.value)); await pintarDisp(false); }
+        for (const box of caja.querySelectorAll('[data-h]')) llenar(box.querySelector('[data-h-destino]'), await cargarDestinos(box.dataset.h, perSel.value));
+      };
+      perSel.addEventListener('change', recargarDest);
+      sel?.addEventListener('change', () => { peso.value = ''; pintarDisp(false); });
+      peso?.addEventListener('input', () => pintarDisp(true));
+      recargarDest();
       caja.addEventListener('click', (e) => {
         const fs = e.target.closest('[data-q]'); const i = fs ? +fs.dataset.q : -1;
         if (e.target.closest('[data-q-nueva]')) { leer(caja); x.preguntas.push({ id: nid(), enunciado: '', tipo: 'unica', opciones: ['', ''], puntos: 1 }); pintar(caja); }
@@ -117,16 +152,38 @@ async function editor(b, a, ex) {
         }
         if (d.cierra && d.abre && d.cierra <= d.abre) throw new Error('La fecha límite debe ser después de la fecha de inicio.');
         const datos = { titulo: d.titulo, instrucciones: d.instrucciones || null, periodo_id: d.periodo_id || null, abre: d.abre ? new Date(d.abre).toISOString() : new Date().toISOString(), cierra: d.cierra ? new Date(d.cierra).toISOString() : null, duracion_min: Number(d.duracion_min) || null, mostrar_resultado: !!d.mostrar_resultado, publicado: !!d.publicado, num_preguntas: x.preguntas.length };
+        const pesoAct = Number(String(d.peso || '').replace(',', '.'));
+        const fechaAct = (datos.cierra || datos.abre).slice(0, 10);
+        if (d.destino && !datos.periodo_id) throw new Error('Para crear la evaluación en la planilla elige el periodo.');
+        // Esta clase + copias (las copias son independientes)
+        const grupos = [{ asigId: a.id, k: d.destino || '' }];
+        if (!ex) for (const box of caja.querySelectorAll('[data-h]')) if (box.querySelector('[name=copia]').checked) grupos.push({ asigId: box.dataset.h, k: box.querySelector('[data-h-destino]').value });
+        for (const g of grupos) if (g.k) {
+          if (!(pesoAct > 0)) throw new Error('Escribe el peso (%) de la evaluación en la planilla.');
+          const dd = (await cargarDestinos(g.asigId, datos.periodo_id)).find((y) => y.k === g.k);
+          if (dd && pesoAct > dd.disponible) throw new Error(`${b.cursoPorId.get(b.asignacionPorId.get(g.asigId)?.curso_id)?.nombre}: en ${dd.t} solo quedan ${dd.disponible}% disponibles.`);
+        }
         let id = ex?.id;
-        if (id) await E.db.update('examenes', datos, { id });
-        else [{ id }] = await E.db.insert('examenes', [{ colegio_id: E.colegio.id, asignacion_id: a.id, creado_por: E.yo.id, ...datos }]);
-        await E.db.upsert('examen_preguntas', [{ examen_id: id, colegio_id: E.colegio.id, preguntas: x.preguntas }], 'examen_id');
-        await E.db.upsert('examen_claves', [{ examen_id: id, colegio_id: E.colegio.id, claves }], 'examen_id');
-        return true;
+        if (id) {
+          let actividad_id = ex.actividad_id || null;
+          if (!actividad_id && d.destino) actividad_id = await crearActividad({ asigId: a.id, periodoId: datos.periodo_id, k: d.destino, destinos: await cargarDestinos(a.id, datos.periodo_id), nombre: d.titulo, porcentaje: pesoAct, fecha: fechaAct });
+          await E.db.update('examenes', { ...datos, actividad_id }, { id });
+          if (vinculada && vinculada.nombre !== d.titulo) await E.db.update('actividades', { nombre: d.titulo }, { id: vinculada.id }).catch(() => {});
+          await E.db.upsert('examen_preguntas', [{ examen_id: id, colegio_id: E.colegio.id, preguntas: x.preguntas }], 'examen_id');
+          await E.db.upsert('examen_claves', [{ examen_id: id, colegio_id: E.colegio.id, claves }], 'examen_id');
+          return true;
+        }
+        for (const g of grupos) {
+          const actividad_id = g.k ? await crearActividad({ asigId: g.asigId, periodoId: datos.periodo_id, k: g.k, destinos: await cargarDestinos(g.asigId, datos.periodo_id), nombre: d.titulo, porcentaje: pesoAct, fecha: fechaAct }) : null;
+          const [{ id: nid2 }] = await E.db.insert('examenes', [{ colegio_id: E.colegio.id, asignacion_id: g.asigId, creado_por: E.yo.id, ...datos, actividad_id }]);
+          await E.db.upsert('examen_preguntas', [{ examen_id: nid2, colegio_id: E.colegio.id, preguntas: x.preguntas }], 'examen_id');
+          await E.db.upsert('examen_claves', [{ examen_id: nid2, colegio_id: E.colegio.id, claves }], 'examen_id');
+        }
+        return grupos.length > 1 ? 'copias:' + grupos.length : true;
       } },
     ],
   });
-  if (r) aviso(r === 'borrado' ? 'Examen eliminado' : 'Examen guardado');
+  if (r) aviso(r === 'borrado' ? 'Examen eliminado' : String(r).startsWith('copias:') ? `Examen creado en ${String(r).split(':')[1]} grupos` : 'Examen guardado');
   return r;
 }
 

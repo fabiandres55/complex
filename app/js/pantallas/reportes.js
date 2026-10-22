@@ -31,8 +31,9 @@ async function datosCurso(b, cursoId) {
     ids.length ? E.db.select('recuperaciones', { in: { asignacion_id: ids } }) : [],
   ]);
   const cal = acts.length ? await E.db.select('calificaciones', { in: { actividad_id: acts.map((a) => a.id) } }) : [];
+  const exps = inds.length ? await E.db.select('experiencias', { in: { indicador_id: inds.map((x) => x.id) } }) : [];
   await perfiles([...ests, ...asigs.map((a) => a.profesor_id)]);
-  return { ests, asigs, acts, inds, recs, cal };
+  return { ests, asigs, acts, inds, recs, cal, exps };
 }
 
 export async function reportes(m, p) {
@@ -55,7 +56,7 @@ export async function reportes(m, p) {
     const notaDe = (a, pr, est) => {
       const acts = d.acts.filter((x) => x.asignacion_id === a.id && x.periodo_id === pr.id);
       const porAct = Object.fromEntries(acts.map((x) => [x.id, nota.get(x.id + '|' + est) ?? null]));
-      const base0 = notaConIndicadores(d.inds.filter((x) => x.asignacion_id === a.id && x.periodo_id === pr.id), acts, porAct);
+      const base0 = notaConIndicadores(d.inds.filter((x) => x.asignacion_id === a.id && x.periodo_id === pr.id), acts, porAct, d.exps);
       return definitiva(base0, d.recs.find((r) => r.asignacion_id === a.id && r.periodo_id === pr.id && r.estudiante_id === est)?.nota).valor;
     };
     const asigs = [...d.asigs].sort((x, z) => (b.materiaPorId.get(x.materia_id)?.nombre || '').localeCompare(b.materiaPorId.get(z.materia_id)?.nombre || ''));

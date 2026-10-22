@@ -92,7 +92,7 @@ export async function estructura(m, p) {
   const recargar = async () => { await recargarBase(); estructura(m, { tab }); };
   const def = {
     sedes: { tabla: 'sedes', titulo: 'Sede', lista: b.sedes, campos: [{ name: 'nombre', label: 'Nombre', req: true }, { name: 'direccion', label: 'Dirección', opcional: true }] },
-    anio: { tabla: 'anios_lectivos', titulo: 'Año lectivo', lista: b.anios, campos: [{ name: 'anio', label: 'Año', tipo: 'number', req: true, def: new Date().getFullYear() }, { name: 'fecha_inicio', label: 'Inicia', tipo: 'date' }, { name: 'fecha_fin', label: 'Termina', tipo: 'date' }, { name: 'activo', label: 'Es el año actual', tipo: 'checkbox', def: !b.anios.length }] },
+    anio: { tabla: 'anios_lectivos', titulo: 'Año lectivo', lista: b.anios, campos: [{ name: 'anio', label: 'Año', tipo: 'number', req: true, def: new Date().getFullYear() }, { name: 'fecha_inicio', label: 'Inicia', tipo: 'date' }, { name: 'fecha_fin', label: 'Termina', tipo: 'date' }, { name: 'activo', label: 'Es el año actual', tipo: 'checkbox', def: !b.anios.length }, { name: 'remedial_desde', label: 'Registro de remediales (fin de año): desde', tipo: 'date' }, { name: 'remedial_hasta', label: 'Registro de remediales: hasta', tipo: 'date' }] },
     grados: { tabla: 'grados', titulo: 'Grado', lista: b.grados, campos: [{ name: 'nombre', label: 'Nombre', req: true }, { name: 'orden', label: 'Orden (0 = Transición, 11 = Once)', tipo: 'number', req: true, def: (b.grados.at(-1)?.orden ?? -1) + 1 }] },
     materias: { tabla: 'materias', titulo: 'Materia', lista: b.materias, campos: [{ name: 'nombre', label: 'Nombre', req: true }, { name: 'area', label: 'Área', opcional: true }] },
   }[tab];
@@ -108,7 +108,12 @@ export async function estructura(m, p) {
     if (r) { if (tab === 'anio' && r.activo) await soloUnAnioActivo(r.id); recargar(); }
   }));
 
-  const camposPeriodo = [{ name: 'numero', label: 'Número', tipo: 'number', req: true }, { name: 'nombre', label: 'Nombre', req: true }, { name: 'fecha_inicio', label: 'Inicia', tipo: 'date' }, { name: 'fecha_fin', label: 'Termina', tipo: 'date' }, { name: 'peso', label: 'Peso en la nota final (%)', tipo: 'number', req: true }, { name: 'cerrado', label: 'Periodo cerrado (los profesores ya no editan notas)', tipo: 'checkbox' }];
+  const camposPeriodo = [{ name: 'numero', label: 'Número', tipo: 'number', req: true }, { name: 'nombre', label: 'Nombre', req: true }, { name: 'fecha_inicio', label: 'Inicia', tipo: 'date' }, { name: 'fecha_fin', label: 'Termina', tipo: 'date' }, { name: 'peso', label: 'Peso en la nota final (%)', tipo: 'number', req: true }, { name: 'cerrado', label: 'Periodo cerrado (los profesores ya no editan notas)', tipo: 'checkbox' },
+    // Fechas importantes (como Phidias): fuera de estas fechas el profesor no puede registrar; vacío = sin límite
+    { name: 'notas_desde', label: 'Registro de notas: desde', tipo: 'date' }, { name: 'notas_hasta', label: 'Registro de notas: hasta', tipo: 'date' },
+    { name: 'obs_desde', label: 'Registro de observaciones: desde', tipo: 'date' }, { name: 'obs_hasta', label: 'Registro de observaciones: hasta', tipo: 'date' },
+    { name: 'plan_desde', label: 'Modificación de planeaciones: desde', tipo: 'date' }, { name: 'plan_hasta', label: 'Modificación de planeaciones: hasta', tipo: 'date' },
+    { name: 'recup_desde', label: 'Registro de recuperaciones: desde', tipo: 'date' }, { name: 'recup_hasta', label: 'Registro de recuperaciones: hasta', tipo: 'date' }];
   m.querySelector('[data-nuevo-periodo]')?.addEventListener('click', async () => {
     const k = b.periodos.length + 1;
     if (await editar({ titulo: 'Nuevo periodo', tabla: 'periodos', campos: camposPeriodo, fila: { numero: k, nombre: `Periodo ${k}`, peso: 25 }, extra: { anio_lectivo_id: b.anio.id } })) recargar();
@@ -372,8 +377,66 @@ async function fichaPersona(x, alCambiar) {
 }
 
 // ---------------------------------------------------------------- Ajustes del colegio
+const CATEGORIAS_AS = [['presente', 'Presente'], ['ausente', 'Ausente (falla)'], ['tarde', 'Llegó tarde'], ['excusa', 'Ausencia justificada']];
+// Tipos de ejemplo (los de un colegio en Phidias)
+const TIPOS_EJEMPLO = [
+  ['Presente con uniforme', 'presente'], ['Presente sin uniforme', 'presente'], ['Ausencia injustificada', 'ausente'], ['Ausencia justificada', 'excusa'],
+  ['Retardo injustificado', 'tarde'], ['Retardo justificado', 'tarde'], ['Salida temprano', 'excusa'],
+  ['Reunión - asiste madre', 'presente'], ['Reunión - asiste padre', 'presente'], ['Reunión - asiste otro', 'presente'], ['Reunión - asisten (padre y madre)', 'presente'], ['Ausente - reunión de padres', 'ausente'],
+];
+
+// Tipos de mensaje (REA Phidias §3.1): los de un colegio en Phidias
+const ROLES_MSG = [['admin', 'Administración'], ['profesor', 'Profesores'], ['acudiente', 'Familias'], ['estudiante', 'Estudiantes']];
+const TIPOS_MSG_EJEMPLO = [
+  ['Circulares', '#c0392b', ['admin'], false, true], ['Mensajes', '#1f4fd1', null, true, false], ['Notificaciones', '#d97706', ['admin', 'profesor'], true, false],
+  ['Seguimientos', '#0f9d58', ['admin', 'profesor'], true, false], ['Transporte y permisos', '#7a3fd1', null, true, false],
+];
+const quienesEnvian = (roles) => (!roles?.length ? 'Todos' : ROLES_MSG.filter(([k]) => roles.includes(k)).map(([, t]) => t).join(', '));
+
+function editarTipoMensaje(c, t) {
+  const nuevo = !t?.id;
+  const f = t || { color: '#1f4fd1', roles: null, permite_respuesta: true, numerar: false, activo: true, orden: 0 };
+  return ventana({
+    titulo: nuevo ? 'Nuevo tipo de mensaje' : 'Tipo de mensaje',
+    html: `<div class="form">
+      <label>Nombre<input name="nombre" maxlength="60" value="${esc(f.nombre || '')}"></label>
+      <label class="en-linea">Color <input type="color" name="color" value="${esc(f.color)}"></label>
+      <fieldset class="tambien"><legend>Quién puede enviarlo</legend>
+        ${ROLES_MSG.map(([k, tx]) => `<label class="check"><input type="checkbox" name="rol_${k}" ${!f.roles?.length || f.roles.includes(k) ? 'checked' : ''} ${k === 'admin' ? 'checked disabled' : ''}> ${tx}</label>`).join('')}
+        <small class="ayuda">El administrador siempre puede enviarlo.</small>
+      </fieldset>
+      <label class="check"><input type="checkbox" name="permite_respuesta" ${f.permite_respuesta !== false ? 'checked' : ''}> Admite respuestas</label>
+      <label class="check"><input type="checkbox" name="numerar" ${f.numerar ? 'checked' : ''}> Número consecutivo (como las circulares: No. 1, No. 2…)</label>
+      ${f.numerar && f.consecutivo ? `<p class="ayuda">Último número usado: ${f.consecutivo}.</p>` : ''}
+      <label>Orden en la lista<input name="orden" inputmode="decimal" value="${esc(String(f.orden ?? 0))}"></label>
+      <label class="check"><input type="checkbox" name="activo" ${f.activo !== false ? 'checked' : ''}> Activo</label>
+    </div>`,
+    botones: [
+      ...(nuevo ? [] : [{ texto: 'Eliminar', clase: 'btn-peligro', antes: async () => {
+        if (!(await confirmar('¿Eliminar el tipo?', 'Los mensajes ya enviados con este tipo quedan como mensajes sin tipo.', 'Eliminar'))) return false;
+        await E.db.remove('tipos_mensaje', { id: t.id }); aviso('Eliminado'); return true;
+      } }]),
+      { texto: 'Cancelar' },
+      { texto: nuevo ? 'Crear' : 'Guardar', antes: async (caja) => {
+        const q = (n) => caja.querySelector(`[name=${n}]`);
+        const nombreT = q('nombre').value.trim();
+        if (!nombreT) throw new Error('Escribe el nombre del tipo.');
+        const roles = ROLES_MSG.filter(([k]) => q('rol_' + k).checked).map(([k]) => k);
+        const d = { nombre: nombreT, color: q('color').value, roles: roles.length === ROLES_MSG.length ? null : roles, permite_respuesta: q('permite_respuesta').checked, numerar: q('numerar').checked, orden: Number(String(q('orden').value).replace(',', '.')) || 0, activo: q('activo').checked };
+        if (nuevo) await E.db.insert('tipos_mensaje', [{ colegio_id: c.id, ...d }]); else await E.db.update('tipos_mensaje', d, { id: t.id });
+        aviso(nuevo ? 'Creado' : 'Guardado');
+        return true;
+      } },
+    ],
+  });
+}
+
 export async function ajustesColegio(m) {
   const c = E.colegio;
+  const [tiposAs, tiposMsg] = await Promise.all([
+    E.db.select('tipos_asistencia', { eq: { colegio_id: c.id }, order: 'orden' }).catch(() => []),
+    E.db.select('tipos_mensaje', { eq: { colegio_id: c.id }, order: 'orden' }).catch(() => []),
+  ]);
   m.innerHTML = cabecera('Ajustes del colegio', { volver: '#/perfil' }) + `
     <section class="tarjeta" id="f-colegio">
       ${camposHTML([
@@ -389,6 +452,16 @@ export async function ajustesColegio(m) {
         { name: 'decimales', label: 'Decimales a mostrar', tipo: 'select', opciones: [[0, '0 (ej. 4)'], [1, '1 (ej. 4.3)'], [2, '2 (ej. 4.25)']] },
       ], c)}
       <p class="ayuda">Desempeños según el Decreto 1290: Bajo (por debajo de la nota para aprobar), Básico, Alto y Superior.</p>
+      <h2>Cómo califican los profesores</h2>
+      <div class="segmentos" role="radiogroup" aria-label="Tipo de escala">
+        <label class="seg-radio"><input type="radio" name="escala_tipo" value="numerica" ${c.escala_tipo !== 'cualitativa' ? 'checked' : ''}> Con números (${esc(String(c.nota_min))} a ${esc(String(c.nota_max))})</label>
+        <label class="seg-radio"><input type="radio" name="escala_tipo" value="cualitativa" ${c.escala_tipo === 'cualitativa' ? 'checked' : ''}> Con desempeños (siglas)</label>
+      </div>
+      <div data-escala-cual ${c.escala_tipo === 'cualitativa' ? '' : 'hidden'}>
+        <p class="ayuda">Como en Phidias: el profesor elige la sigla de una lista (ej. S, A, BS, BJ). <b>Valor</b> es el número con que cuenta en los promedios y <b>Desde</b> la nota mínima de su rango (así un promedio de 2,8 sale como BJ si "BS" empieza en 3,0).</p>
+        <table class="tabla tabla-escala"><thead><tr><th>Sigla</th><th>Nombre</th><th>Valor</th><th>Desde</th><th></th></tr></thead><tbody data-escala-filas></tbody></table>
+        <button class="btn btn-chico" data-escala-mas>＋ Sigla</button>
+      </div>
       <button class="btn btn-primario" data-guardar>Guardar</button>
     </section>
     <section class="tarjeta" id="f-marca">
@@ -399,7 +472,32 @@ export async function ajustesColegio(m) {
         <label class="en-linea">Color institucional <input type="color" name="color" value="${esc(c.color || '#1f4fd1')}"></label>
         <div class="acciones"><button class="btn btn-primario" data-guardar-marca>Guardar marca</button>${c.logo_ruta || c.color ? '<button class="btn" data-quitar-marca>Volver a la marca de Complex_</button>' : ''}</div>
       </div>
+    </section>
+    <section class="tarjeta" id="tipos-asistencia">
+      <h2>Tipos de asistencia</h2>
+      <p class="ayuda">Como en Phidias: los profesores eligen el tipo de cada estudiante (ej. "Presente con uniforme", "Retardo justificado"). Cada tipo cuenta como presente, falla, retardo o ausencia justificada. Sin tipos, se usa P / A / T / E.</p>
+      ${tiposAs.length ? `<div class="lista">${tiposAs.map((t) => `<button class="fila fila-boton" data-tipo-as="${t.id}"><span class="num">${t.orden}</span><span class="crece"><b>${esc(t.nombre)}</b><small>${esc(CATEGORIAS_AS.find(([k]) => k === t.categoria)?.[1] || t.categoria)}${t.activo === false ? ' · inactivo' : ''}</small></span></button>`).join('')}</div>` : '<p class="ayuda">Aún no hay tipos: los profesores usan P / A / T / E.</p>'}
+      <div class="acciones"><button class="btn" data-tipo-as-nuevo>＋ Tipo</button>${tiposAs.length ? '' : '<button class="btn" data-tipo-as-ejemplo>Cargar los tipos de ejemplo</button>'}</div>
+    </section>
+    <section class="tarjeta" id="tipos-mensaje">
+      <h2>Tipos de mensaje</h2>
+      <p class="ayuda">Como en Phidias: cada mensaje puede llevar un tipo (Circulares, Notificaciones, Transporte y permisos…) con su color en la bandeja y el calendario. Para cada tipo eliges quién puede enviarlo, si admite respuestas y si lleva número consecutivo. Sin tipos, todos los mensajes son iguales.</p>
+      ${tiposMsg.length ? `<div class="lista">${tiposMsg.map((t) => `<button class="fila fila-boton" data-tipo-msg="${t.id}"><span class="avatar" style="background:${esc(t.color)}"></span><span class="crece"><b>${esc(t.nombre)}</b><small>Envían: ${esc(quienesEnvian(t.roles))}${t.permite_respuesta === false ? ' · sin respuestas' : ''}${t.numerar ? ` · numerado (va en ${t.consecutivo || 0})` : ''}${t.activo === false ? ' · inactivo' : ''}</small></span></button>`).join('')}</div>` : '<p class="ayuda">Aún no hay tipos de mensaje.</p>'}
+      <div class="acciones"><button class="btn" data-tipo-msg-nuevo>＋ Tipo</button>${tiposMsg.length ? '' : '<button class="btn" data-tipo-msg-ejemplo>Cargar los tipos de ejemplo</button>'}</div>
     </section>`;
+  m.querySelector('[data-tipo-msg-nuevo]').onclick = async () => { if (await editarTipoMensaje(c, { color: '#1f4fd1', roles: null, permite_respuesta: true, numerar: false, activo: true, orden: (tiposMsg.at(-1)?.orden || 0) + 1 })) ajustesColegio(m); };
+  m.querySelectorAll('[data-tipo-msg]').forEach((bt) => (bt.onclick = async () => { if (await editarTipoMensaje(c, tiposMsg.find((t) => t.id === bt.dataset.tipoMsg))) ajustesColegio(m); }));
+  m.querySelector('[data-tipo-msg-ejemplo]')?.addEventListener('click', async () => {
+    try { await E.db.insert('tipos_mensaje', TIPOS_MSG_EJEMPLO.map(([nombre, color, roles, permite_respuesta, numerar], i) => ({ colegio_id: c.id, nombre, color, roles, permite_respuesta, numerar, orden: i + 1 }))); aviso('Tipos de mensaje cargados'); ajustesColegio(m); }
+    catch (e) { aviso(e.message, 'error'); }
+  });
+  const camposTipo = [{ name: 'nombre', label: 'Nombre', req: true }, { name: 'categoria', label: 'Cuenta como', tipo: 'select', opciones: CATEGORIAS_AS }, { name: 'orden', label: 'Orden en la lista', tipo: 'number' }, { name: 'activo', label: 'Activo', tipo: 'checkbox' }];
+  m.querySelector('[data-tipo-as-nuevo]').onclick = async () => { if (await editar({ titulo: 'Nuevo tipo de asistencia', tabla: 'tipos_asistencia', campos: camposTipo, fila: { categoria: 'presente', orden: (tiposAs.at(-1)?.orden || 0) + 1, activo: true } })) ajustesColegio(m); };
+  m.querySelectorAll('[data-tipo-as]').forEach((bt) => (bt.onclick = async () => { if (await editar({ titulo: 'Tipo de asistencia', tabla: 'tipos_asistencia', campos: camposTipo, fila: tiposAs.find((t) => t.id === bt.dataset.tipoAs) })) ajustesColegio(m); }));
+  m.querySelector('[data-tipo-as-ejemplo]')?.addEventListener('click', async () => {
+    try { await E.db.insert('tipos_asistencia', TIPOS_EJEMPLO.map(([nombre, categoria], i) => ({ colegio_id: c.id, nombre, categoria, orden: i + 1, activo: true }))); aviso('Tipos de asistencia cargados'); ajustesColegio(m); }
+    catch (e) { aviso(e.message, 'error'); }
+  });
   m.querySelector('[data-guardar-marca]').onclick = async (ev) => {
     const caja = m.querySelector('#f-marca');
     const arch = caja.querySelector('[name=logo]').files[0];
@@ -429,12 +527,29 @@ export async function ajustesColegio(m) {
       aplicarMarca(); aviso('Marca restablecida'); ajustesColegio(m);
     } catch (e) { aviso(e.message, 'error'); }
   });
+  // Escala cualitativa: filas editables
+  const filasEsc = m.querySelector('[data-escala-filas]');
+  const filaEsc = (x = {}) => `<tr><td><input data-e="sigla" value="${esc(x.sigla || '')}" maxlength="4" aria-label="Sigla"></td><td><input data-e="nombre" value="${esc(x.nombre || '')}" aria-label="Nombre"></td><td><input data-e="valor" inputmode="decimal" value="${x.valor ?? ''}" aria-label="Valor"></td><td><input data-e="desde" inputmode="decimal" value="${x.desde ?? ''}" aria-label="Desde (nota mínima de la sigla)"></td><td><button class="btn-icono" data-escala-quitar aria-label="Quitar">✕</button></td></tr>`;
+  filasEsc.innerHTML = (Array.isArray(c.escala) && c.escala.length ? c.escala : [{ sigla: 'S', nombre: 'Superior', valor: 5, desde: 4.6 }, { sigla: 'A', nombre: 'Alto', valor: 4.3, desde: 4 }, { sigla: 'BS', nombre: 'Básico', valor: 3.5, desde: 3 }, { sigla: 'BJ', nombre: 'Bajo', valor: 2, desde: 1 }]).map(filaEsc).join('');
+  filasEsc.addEventListener('click', (e) => { if (e.target.closest('[data-escala-quitar]')) e.target.closest('tr').remove(); });
+  m.querySelector('[data-escala-mas]').onclick = () => filasEsc.insertAdjacentHTML('beforeend', filaEsc());
+  m.querySelectorAll('[name=escala_tipo]').forEach((r) => (r.onchange = () => { m.querySelector('[data-escala-cual]').hidden = m.querySelector('[name=escala_tipo]:checked').value !== 'cualitativa'; }));
   m.querySelector('[data-guardar]').onclick = async () => {
     const d = leerForm(m.querySelector('#f-colegio'));
     const num = (v) => Number(String(v).replace(',', '.'));
     const cambios = { nombre: d.nombre, nit: d.nit || null, ciudad: d.ciudad || null, nota_min: num(d.nota_min), nota_max: num(d.nota_max), nota_aprobacion: num(d.nota_aprobacion), decimales: +d.decimales };
     if (!cambios.nombre) return aviso('El colegio necesita un nombre.', 'error');
     if (!(cambios.nota_min < cambios.nota_max) || cambios.nota_aprobacion < cambios.nota_min || cambios.nota_aprobacion > cambios.nota_max) return aviso('Revisa la escala: mínima < aprobar ≤ máxima.', 'error');
+    cambios.escala_tipo = m.querySelector('[name=escala_tipo]:checked')?.value === 'cualitativa' ? 'cualitativa' : 'numerica';
+    const escala = [...filasEsc.querySelectorAll('tr')].map((tr) => ({ sigla: tr.querySelector('[data-e=sigla]').value.trim().toUpperCase(), nombre: tr.querySelector('[data-e=nombre]').value.trim(), valor: num(tr.querySelector('[data-e=valor]').value), desde: num(tr.querySelector('[data-e=desde]').value) })).filter((x) => x.sigla || x.nombre);
+    if (cambios.escala_tipo === 'cualitativa') {
+      if (escala.length < 2) return aviso('La escala con desempeños necesita al menos 2 siglas.', 'error');
+      if (escala.some((x) => !x.sigla || !x.nombre || Number.isNaN(x.valor))) return aviso('Cada sigla necesita sigla, nombre y valor.', 'error');
+      if (new Set(escala.map((x) => x.sigla)).size !== escala.length) return aviso('Hay siglas repetidas.', 'error');
+      if (escala.some((x) => x.valor < cambios.nota_min || x.valor > cambios.nota_max)) return aviso(`Los valores deben estar entre ${cambios.nota_min} y ${cambios.nota_max}.`, 'error');
+      if (escala.some((x) => Number.isNaN(x.desde) || x.desde < cambios.nota_min || x.desde > x.valor)) return aviso('Cada sigla necesita "Desde" (la nota mínima de su rango), entre la mínima de la escala y su valor.', 'error');
+    }
+    if (escala.length) cambios.escala = escala.sort((x, y) => y.valor - x.valor);
     try {
       const [r] = await E.db.update('colegios', cambios, { id: c.id });
       Object.assign(E.colegio, r || cambios);

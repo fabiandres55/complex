@@ -63,7 +63,8 @@ export async function crearDbSupabase() {
         const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
         falla(error);
       },
-      onChange(cb) { sb.auth.onAuthStateChange(() => cb()); },
+      onChange(cb) { sb.auth.onAuthStateChange((evento) => cb(evento)); },
+      async updatePassword(nueva) { const { error } = await sb.auth.updateUser({ password: nueva }); falla(error); },
     },
     async select(tabla, q = {}) {
       const { data, error } = await aplicar(sb.from(tabla).select('*'), q);
@@ -136,7 +137,7 @@ function traducirError(m) {
 }
 
 // ---------------------------------------------------------------- Demo
-const CLAVE_DEMO = 'complex_demo_v1';
+const CLAVE_DEMO = 'complex_demo_v8'; // v2: criterios → experiencias → actividades
 const CLAVE_DEMO_USUARIO = 'complex_demo_usuario';
 const CLAVE_DEMO_ARCHIVOS = 'complex_demo_archivos';
 const leerArchivos = () => { try { return JSON.parse(localStorage.getItem(CLAVE_DEMO_ARCHIVOS)) || {}; } catch { return {}; } };
@@ -153,6 +154,9 @@ const LLAVES = {
   examen_claves: ['examen_id'],
   examen_preguntas: ['examen_id'],
   examen_intentos: ['examen_id', 'estudiante_id'],
+  observaciones_boletin: ['asignacion_id', 'periodo_id', 'estudiante_id'],
+  remediales: ['asignacion_id', 'estudiante_id'],
+  datos_personales: ['perfil_id'],
 };
 
 export function crearDbDemo() {
@@ -179,17 +183,21 @@ export function crearDbDemo() {
   const hoyLocal = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
   const siguiente = (n) => 1000 + tabla(n).reduce((s, x) => Math.max(s, (x.numero || 1000) - 1000), 0) + 1;
   const DEF = {
-    colegios: () => ({ nota_min: 1, nota_max: 5, nota_aprobacion: 3, decimales: 1 }),
+    colegios: () => ({ nota_min: 1, nota_max: 5, nota_aprobacion: 3, decimales: 1, escala_tipo: 'numerica', escala: [{ sigla: 'S', nombre: 'Superior', valor: 5, desde: 4.6 }, { sigla: 'A', nombre: 'Alto', valor: 4.3, desde: 4 }, { sigla: 'BS', nombre: 'Básico', valor: 3.5, desde: 3 }, { sigla: 'BJ', nombre: 'Bajo', valor: 2, desde: 1 }] }),
     perfiles: () => ({ nombres: '', apellidos: '' }),
     anios_lectivos: () => ({ activo: false }),
     periodos: () => ({ peso: 33.33, cerrado: false }),
     matriculas: () => ({ estado: 'activa', fecha: hoyLocal() }),
-    asistencia: () => ({ estado: 'presente', fecha: hoyLocal() }),
+    asistencia: () => ({ estado: 'presente', fecha: hoyLocal(), tipo_id: null, nota: null }),
+    tipos_asistencia: () => ({ orden: 0, activo: true }),
+    seguimientos: () => ({ registro_unico: false, visible_familia: false, campos: [], notificar: {}, propio: false, activo: true, fecha_inicial: hoyLocal(), fecha_final: null, creado_en: new Date().toISOString() }),
+    seguimiento_registros: () => ({ datos: {}, creado_en: new Date().toISOString() }),
     observaciones: () => ({ fecha: hoyLocal(), visible_acudiente: true, categoria: 'Observador' }),
     planeaciones: () => ({ estado: "enviada" }),
-    mensajes: () => ({ cuerpo: '', permite_respuesta: true, ocultar_destinatarios: false, destacado: false, autor_archivado: false, autor_eliminado: false, responde_a: null }),
+    mensajes: () => ({ cuerpo: '', permite_respuesta: true, ocultar_destinatarios: false, destacado: false, autor_archivado: false, autor_eliminado: false, responde_a: null, permite_responder_todos: false, permite_reenviar: true, expira_en: null, evento_inicio: null, evento_fin: null, evento_todo_el_dia: true, tipo_id: null, numero: null }),
+    tipos_mensaje: () => ({ color: '#1f4fd1', roles: null, permite_respuesta: true, numerar: false, consecutivo: 0, orden: 0, activo: true }),
     mensaje_destinatarios: () => ({ leido_en: null, archivado: false, eliminado: false }),
-    tareas: () => ({ descripcion: '', requiere_entrega: true, publicada_en: new Date().toISOString() }),
+    tareas: () => ({ descripcion: '', requiere_entrega: true, entrega_modo: 'en_linea', foro: false, actividad_id: null, publicada_en: new Date().toISOString() }),
     tarea_entregas: () => ({ entregada_en: new Date().toISOString(), nota: null, revisada_en: null }),
     eventos: () => ({ todo_el_dia: true, tipo: 'institucional' }),
     conceptos_cobro: () => ({ activo: true, valor_defecto: 0 }),
@@ -200,16 +208,38 @@ export function crearDbDemo() {
     archivos: () => ({ anio: new Date().getFullYear(), carpeta: 'General' }),
     examenes: () => ({ num_preguntas: 0, resultados_publicados: false, publicado: false, mostrar_resultado: true, abre: new Date().toISOString(), cierra: null, duracion_min: null }),
     examen_intentos: () => ({ respuestas: {}, iniciado_en: new Date().toISOString(), entregado_en: null, pendiente_revision: false, fuera_de_tiempo: false }),
-    aula_publicaciones: () => ({ fijada: false, enlace: null }),
+    aula_publicaciones: () => ({ fijada: false, enlace: null, seccion_id: null }),
+    aula_secciones: () => ({ orden: 0 }),
     horario_bloques: () => ({ asignacion_id: null, titulo: null, aula: null }),
     procesos: () => ({ pasos: [], roles: ['acudiente'], por_estudiante: true, publicado: false, abre: new Date().toISOString(), cierra: null }),
     proceso_respuestas: () => ({ datos: {}, paso: 0, terminado: false }),
-    actividades: () => ({ porcentaje: 0, indicador_id: null }),
+    actividades: () => ({ porcentaje: 0, indicador_id: null, experiencia_id: null, opcional: false, privada: false }),
+    experiencias: () => ({ numero: 1, porcentaje: 0 }),
+    remediales: () => ({ fecha: hoyLocal() }),
+    tarea_comentarios: () => ({ creado_en: new Date().toISOString() }),
+    datos_personales: () => ({}),
     cobros: () => ({ anulado: false, numero: siguiente('cobros') }),
     pagos: () => ({ anulado: false, medio: 'efectivo', fecha: hoyLocal(), numero: siguiente('pagos') }),
     acudientes: () => ({ principal: false, responsable_pagos: false }),
   };
 
+  // (insertar = true: la fila es nueva; una entrega nueva llega sin nota y NO debe borrar la nota de la planilla)
+  const aPlanilla = (n, r, insertar = false) => {
+    let act = null;
+    if (n === 'tarea_entregas') { if (insertar && r.nota == null) return; act = tabla('tareas').find((x) => x.id === r.tarea_id)?.actividad_id; }
+    if (n === 'examen_intentos') {
+      const ex = tabla('examenes').find((x) => x.id === r.examen_id);
+      if (r.pendiente_revision || !(ex?.mostrar_resultado || ex?.resultados_publicados)) return; // aún no se puede ver
+      act = ex?.actividad_id;
+    }
+    if (!act) return;
+    const i = tabla('calificaciones').findIndex((x) => x.actividad_id === act && x.estudiante_id === r.estudiante_id);
+    if (r.nota == null) { if (n === 'tarea_entregas' && i >= 0) tabla('calificaciones').splice(i, 1); return; }
+    try {
+      const c = completar('calificaciones', { ...(i >= 0 ? tabla('calificaciones')[i] : {}), colegio_id: r.colegio_id, actividad_id: act, estudiante_id: r.estudiante_id, valor: r.nota });
+      if (i >= 0) tabla('calificaciones')[i] = c; else tabla('calificaciones').push(c);
+    } catch (e) { if (n === 'tarea_entregas') throw e; } // el examen igual queda guardado
+  };
   const completar = (n, f) => {
     const r = { ...(DEF[n]?.() || {}), ...Object.fromEntries(Object.entries(f).filter(([, v]) => v !== undefined)) };
     if (!LLAVES[n] && !r.id) r.id = crypto.randomUUID();
@@ -225,6 +255,50 @@ export function crearDbDemo() {
     }
     if (['colegios', 'perfiles', 'miembros', 'observaciones', 'circulares', 'planeaciones', 'mensajes', 'tareas', 'eventos', 'cobros', 'pagos', 'menciones', 'reportes_ausencia', 'archivos', 'procesos', 'aula_publicaciones'].includes(n)) r.creado_en ??= ahora();
     if (n === 'circular_lecturas') r.leida_en ??= ahora();
+    // Fechas importantes (ventanas) del periodo / año, como en la base real
+    const hoyD = hoyLocal();
+    const fuera = (d, h) => (d && hoyD < d) || (h && hoyD > h);
+    const fmt = (d, h) => (d && h ? `del ${d.split('-').reverse().join('/')} al ${h.split('-').reverse().join('/')}` : d ? `desde el ${d.split('-').reverse().join('/')}` : `hasta el ${h.split('-').reverse().join('/')}`);
+    const perDe = (pid) => tabla('periodos').find((p) => p.id === pid);
+    if (!esAdmin(r.colegio_id)) {
+      if (n === 'calificaciones') { const a = tabla('actividades').find((x) => x.id === r.actividad_id); const p = a && perDe(a.periodo_id); if (p && fuera(p.notas_desde, p.notas_hasta)) err(`El registro de notas de este periodo es ${fmt(p.notas_desde, p.notas_hasta)}; fuera de esas fechas solo el administrador puede hacer cambios.`); }
+      if (n === 'recuperaciones') { const p = perDe(r.periodo_id); if (p && fuera(p.recup_desde, p.recup_hasta)) err(`El registro de recuperaciones de este periodo es ${fmt(p.recup_desde, p.recup_hasta)}; fuera de esas fechas solo el administrador puede hacer cambios.`); }
+      if (n === 'observaciones_boletin') { const p = perDe(r.periodo_id); if (p?.cerrado) err('El periodo está cerrado; solo el administrador puede cambiar observaciones'); if (p && fuera(p.obs_desde, p.obs_hasta)) err(`El registro de observaciones de este periodo es ${fmt(p.obs_desde, p.obs_hasta)}; fuera de esas fechas solo el administrador puede hacer cambios.`); }
+      if (n === 'planeaciones' && r.periodo_id) { const p = perDe(r.periodo_id); if (p && fuera(p.plan_desde, p.plan_hasta)) err(`El plazo para modificar planeaciones de este periodo es ${fmt(p.plan_desde, p.plan_hasta)}; fuera de esas fechas solo el administrador puede hacer cambios.`); }
+      if (n === 'remediales') { const a = tabla('asignaciones').find((x) => x.id === r.asignacion_id); const cu = a && tabla('cursos').find((x) => x.id === a.curso_id); const al = cu && tabla('anios_lectivos').find((x) => x.id === cu.anio_lectivo_id); if (!al?.remedial_desde && !al?.remedial_hasta) err('El colegio aún no ha abierto las fechas de remediales.'); if (fuera(al.remedial_desde, al.remedial_hasta)) err(`El registro de remediales del año es ${fmt(al.remedial_desde, al.remedial_hasta)}; fuera de esas fechas solo el administrador puede hacer cambios.`); }
+    }
+    if (n === 'observaciones_boletin') r.actualizado_en = ahora();
+    // Igual que la base real: los criterios los define coordinación; el criterio de una actividad sale de su experiencia
+    if (n === 'indicadores' && !esAdmin(r.colegio_id)) err('Solo coordinación (administrador) puede crear o modificar criterios');
+    if (n === 'asistencia' && r.tipo_id) { const ti = tabla('tipos_asistencia').find((x) => x.id === r.tipo_id); if (ti) r.estado = ti.categoria; }
+    if (n === 'tipos_asistencia' && !esAdmin(r.colegio_id)) err('Solo el administrador define los tipos de asistencia');
+    if (n === 'tipos_mensaje' && !esAdmin(r.colegio_id)) err('Solo el administrador define los tipos de mensaje');
+    // Tipo de mensaje: las respuestas heredan el del original; el autor debe poder enviarlo; numeración; luego no cambia
+    if (n === 'mensajes') {
+      const antes = tabla(n).find((x) => x.id === r.id);
+      if (antes) { r.tipo_id = antes.tipo_id ?? null; r.numero = antes.numero ?? null; }
+      else if (r.responde_a) { r.tipo_id = tabla(n).find((x) => x.id === r.responde_a)?.tipo_id ?? null; r.numero = null; }
+      else if (r.tipo_id) {
+        const tm = tabla('tipos_mensaje').find((x) => x.id === r.tipo_id);
+        if (!tm || tm.colegio_id !== r.colegio_id) err('Ese tipo de mensaje no es de este colegio.');
+        if (tm.activo === false) err(`El tipo de mensaje "${tm.nombre}" está inactivo.`);
+        const puede = !tm.roles?.length || esAdmin(r.colegio_id) || tabla('miembros').some((m) => m.colegio_id === r.colegio_id && m.perfil_id === usuario() && m.activo !== false && tm.roles.includes(m.rol));
+        if (!puede) err(`No puedes enviar mensajes de tipo "${tm.nombre}".`);
+        if (tm.permite_respuesta === false) { r.permite_respuesta = false; r.permite_responder_todos = false; }
+        r.numero = null;
+        if (tm.numerar) { tm.consecutivo = (tm.consecutivo || 0) + 1; r.numero = tm.consecutivo; }
+      } else r.numero = null;
+    }
+    if (n === 'seguimiento_registros') {
+      const sg = tabla('seguimientos').find((x) => x.id === r.seguimiento_id);
+      const nuevo = !tabla(n).some((x) => x.id === r.id);
+      if (sg && nuevo) {
+        if ((sg.fecha_inicial && hoyD < sg.fecha_inicial) || (sg.fecha_final && hoyD > sg.fecha_final)) err(`El seguimiento "${sg.nombre}" no está abierto en esta fecha.`);
+        if (sg.registro_unico && tabla(n).some((x) => x.seguimiento_id === sg.id && x.estudiante_id === r.estudiante_id)) err(`El seguimiento "${sg.nombre}" es de registro único: este estudiante ya tiene uno (puedes editarlo).`);
+      }
+      r.actualizado_en = ahora();
+    }
+    if (n === 'actividades' && r.experiencia_id) { const x = tabla('experiencias').find((e) => e.id === r.experiencia_id); if (x) r.indicador_id = x.indicador_id; }
     if (n === 'circulares' && r.publicada_en && !r.numero) r.numero = 1 + tabla(n).filter((x) => x.colegio_id === r.colegio_id).reduce((s, x) => Math.max(s, x.numero || 0), 0);
     if (n === 'proceso_respuestas') { r.actualizado_en = ahora(); const antes = tabla(n).find((x) => x.id === r.id); if (r.terminado && !antes?.terminado) r.terminado_en = ahora(); }
     if (n === 'recuperaciones') {
@@ -298,6 +372,7 @@ export function crearDbDemo() {
       async signIn(idDemo) { localStorage.setItem(CLAVE_DEMO_USUARIO, idDemo); },
       async signUp() { err('En el modo demo no se crean cuentas.'); },
       async signOut() { localStorage.removeItem(CLAVE_DEMO_USUARIO); },
+      async updatePassword() { err('En el modo demo no se cambian contraseñas.'); },
       async resetPassword() {},
       onChange() {},
     },
@@ -320,6 +395,7 @@ export function crearDbDemo() {
         const k = LLAVES[n];
         if (k && tabla(n).some((x) => k.every((c) => x[c] === r[c]))) err('Ese dato ya existe.');
         tabla(n).push(r);
+        aPlanilla(n, r, true);
         out.push(copia(r));
       }
       guardar();
@@ -332,6 +408,7 @@ export function crearDbDemo() {
         const i = tabla(n).findIndex((x) => k.every((c) => x[c] === f[c]));
         const r = completar(n, i >= 0 ? { ...tabla(n)[i], ...f } : f);
         if (i >= 0) tabla(n)[i] = r; else tabla(n).push(r);
+        aPlanilla(n, r, i < 0);
         out.push(copia(r));
       }
       guardar();
@@ -340,7 +417,8 @@ export function crearDbDemo() {
     async update(n, cambios, eq) {
       const out = [];
       tabla(n).forEach((f, i) => {
-        if (coincide(f, { eq })) { tabla(n)[i] = completar(n, { ...f, ...cambios }); out.push(copia(tabla(n)[i])); }
+        if (coincide(f, { eq })) { tabla(n)[i] = completar(n, { ...f, ...cambios }); if ('nota' in cambios || 'pendiente_revision' in cambios) aPlanilla(n, tabla(n)[i]);
+          if (n === 'examenes' && ('resultados_publicados' in cambios || 'mostrar_resultado' in cambios)) for (const it of tabla('examen_intentos').filter((x) => x.examen_id === f.id && x.nota != null)) aPlanilla('examen_intentos', it); out.push(copia(tabla(n)[i])); }
       });
       guardar();
       return out;

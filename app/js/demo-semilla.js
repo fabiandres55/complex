@@ -41,6 +41,15 @@ export function crearSemillaDemo() {
   t.anios_lectivos.push(anio);
   const periodos = [1, 2, 3].map((k) => ({ id: id('pdo'), colegio_id: c, anio_lectivo_id: anio.id, numero: k, nombre: `Periodo ${k}`, fecha_inicio: null, fecha_fin: null, peso: 33.33, cerrado: k === 1 }));
   t.periodos.push(...periodos);
+  // Tipos de asistencia (como un colegio en Phidias)
+  t.tipos_asistencia = [['Presente con uniforme', 'presente'], ['Presente sin uniforme', 'presente'], ['Ausencia injustificada', 'ausente'], ['Ausencia justificada', 'excusa'], ['Retardo injustificado', 'tarde'], ['Retardo justificado', 'tarde'], ['Salida temprano', 'excusa'], ['Reunión - asiste madre', 'presente'], ['Reunión - asiste padre', 'presente'], ['Ausente - reunión de padres', 'ausente']]
+    .map(([nombre, categoria], i) => ({ id: `tas-${String(i + 1).padStart(2, '0')}`, colegio_id: c, nombre, categoria, orden: i + 1, activo: true })); // ids propios: no corren el contador
+  // Tipos de mensaje (como Phidias: Circulares con consecutivo, Notificaciones, Seguimientos…)
+  t.tipos_mensaje = [['Circulares', '#c0392b', ['admin'], false, true, 1], ['Mensajes', '#1f4fd1', null, true, false, 0], ['Notificaciones', '#d97706', ['admin', 'profesor'], true, false, 0], ['Seguimientos', '#0f9d58', ['admin', 'profesor'], true, false, 0], ['Transporte y permisos', '#7a3fd1', null, true, false, 0]]
+    .map(([nombre, color, roles, permite_respuesta, numerar, consecutivo], i) => ({ id: `tms-0${i + 1}`, colegio_id: c, nombre, color, roles, permite_respuesta, numerar, consecutivo, orden: i + 1, activo: true }));
+  // Fechas importantes (como Phidias): periodo 2 abierto ahora; periodo 3 abre en un mes; remediales sin fechas
+  Object.assign(periodos[1], { notas_desde: dia(-50), notas_hasta: dia(25), obs_desde: dia(-50), obs_hasta: dia(25), plan_desde: dia(-50), plan_hasta: dia(25), recup_desde: dia(26), recup_hasta: dia(35) });
+  Object.assign(periodos[2], { notas_desde: dia(30), notas_hasta: dia(100), obs_desde: dia(30), obs_hasta: dia(100), plan_desde: dia(20), plan_hasta: dia(100), recup_desde: dia(101), recup_hasta: dia(110) });
 
   const grados = [['Sexto', 6], ['Séptimo', 7]].map(([nombre, orden]) => ({ id: id('gra'), colegio_id: c, nombre, orden }));
   t.grados.push(...grados);
@@ -155,11 +164,11 @@ export function crearSemillaDemo() {
     return m;
   };
   const valentina = estudiantes[0].e, santiago = estudiantes[1].e;
-  const m1 = msj(acu1, [profes[0]], 'Pregunta sobre el taller de fracciones', 'Buenas tardes profe Carlos. Valentina no entendió el punto 4 del taller. ¿Podría explicarlo de nuevo en clase? Gracias.', {}, -3, [profes[0]]);
-  msj(profes[0], [acu1], 'Re: Pregunta sobre el taller de fracciones', 'Con gusto, mañana lo repasamos al inicio de la clase. Cordial saludo.', { responde_a: m1.id }, -2);
-  msj(profes[0], [acu2], 'Taller pendiente de Santiago', 'Señor Ricardo: Santiago no ha entregado el taller de Matemáticas. Tiene plazo hasta el viernes.', { permite_respuesta: true }, -1);
-  msj(rectora, [...profes, acu1, acu2, acu3], 'Jornada pedagógica — no hay clases el lunes', 'Les recordamos que el lunes es jornada pedagógica. Los estudiantes no tienen clase.', { destacado: true, ocultar_destinatarios: true, permite_respuesta: false }, -4, [profes[0], acu1]);
-  msj(rectora, [profes[0], profes[1], profes[2]], 'Entrega de planeaciones', 'Profes, recuerden subir las planeaciones de la semana en el módulo Planeaciones antes del viernes.', {}, -1, [profes[1]]);
+  const m1 = msj(acu1, [profes[0]], 'Pregunta sobre el taller de fracciones', 'Buenas tardes profe Carlos. Valentina no entendió el punto 4 del taller. ¿Podría explicarlo de nuevo en clase? Gracias.', { tipo_id: 'tms-02' }, -3, [profes[0]]);
+  msj(profes[0], [acu1], 'Re: Pregunta sobre el taller de fracciones', 'Con gusto, mañana lo repasamos al inicio de la clase. Cordial saludo.', { responde_a: m1.id, tipo_id: 'tms-02' }, -2);
+  msj(profes[0], [acu2], 'Taller pendiente de Santiago', 'Señor Ricardo: Santiago no ha entregado el taller de Matemáticas. Tiene plazo hasta el viernes.', { permite_respuesta: true, tipo_id: 'tms-04' }, -1);
+  msj(rectora, [...profes, acu1, acu2, acu3], 'Jornada pedagógica — no hay clases el lunes', 'Les recordamos que el lunes es jornada pedagógica. Los estudiantes no tienen clase.', { destacado: true, ocultar_destinatarios: true, permite_respuesta: false, tipo_id: 'tms-01', numero: 1 }, -4, [profes[0], acu1]);
+  msj(rectora, [profes[0], profes[1], profes[2]], 'Entrega de planeaciones', 'Profes, recuerden subir las planeaciones de la semana en el módulo Planeaciones antes del viernes.', { tipo_id: 'tms-03' }, -1, [profes[1]]);
 
   // Tareas (en Matemáticas de 6A y 7A, y Lengua de 6A)
   t.tareas = []; t.tarea_entregas = [];
@@ -193,7 +202,11 @@ export function crearSemillaDemo() {
   const ind1 = { id: id('ind'), colegio_id: c, asignacion_id: asignaciones[0].id, periodo_id: periodos[1].id, numero: 1, descripcion: 'Reconoce y representa fracciones equivalentes en diferentes contextos.', dimension: 'Cognitiva', peso: 60 };
   const ind2 = { id: id('ind'), colegio_id: c, asignacion_id: asignaciones[0].id, periodo_id: periodos[1].id, numero: 2, descripcion: 'Resuelve problemas cotidianos usando operaciones con fracciones.', dimension: 'Procedimental', peso: 40 };
   t.indicadores.push(ind1, ind2);
-  if (actsM[0]) actsM[0].indicador_id = ind1.id, actsM[0].porcentaje = 100;
+  // Experiencias del criterio 1 (como Phidias: Criterio → Experiencias → Actividades)
+  const exp1 = { id: id('exp'), colegio_id: c, indicador_id: ind1.id, numero: 1, nombre: 'Experiencias 1', porcentaje: 70 };
+  const exp2 = { id: id('exp'), colegio_id: c, indicador_id: ind1.id, numero: 2, nombre: 'Experiencias 2', porcentaje: 30 };
+  t.experiencias = [exp1, exp2];
+  if (actsM[0]) Object.assign(actsM[0], { indicador_id: ind1.id, experiencia_id: exp1.id, porcentaje: 100, opcional: false, privada: false });
   if (actsM[1]) actsM[1].indicador_id = ind2.id, actsM[1].porcentaje = 100;
   // Una recuperación (Lengua 6A, periodo 1) y menciones
   t.recuperaciones.push({ colegio_id: c, asignacion_id: asignaciones[1].id, periodo_id: periodos[0].id, estudiante_id: estudiantes[1].e.id, nota: 3.5, observacion: 'Presentó taller de recuperación', fecha: dia(-40), registrado_por: profes[1].id });
@@ -276,5 +289,26 @@ export function crearSemillaDemo() {
     }
   }
 
+  // Seguimientos del colegio (formularios), como en Phidias
+  t.seguimientos = [
+    { id: 'seg-01', colegio_id: c, nombre: 'Seguimiento académico', descripcion: 'Registro de seguimientos académicos según el Sistema Institucional de Evaluación.', anio: anio.anio, fecha_inicial: anio.fecha_inicio, fecha_final: null, registro_unico: false, visible_familia: true, propio: false, activo: true, creado_por: rectora.id, creado_en: cuando(-30, 8),
+      campos: [{ id: 'c1', etiqueta: 'Situación', tipo: 'opcion', opciones: ['Bajo rendimiento', 'Tareas pendientes', 'Inasistencia', 'Avance destacado'], requerido: true }, { id: 'c2', etiqueta: 'Descripción', tipo: 'parrafo', opciones: [], requerido: true }, { id: 'c3', etiqueta: 'Compromiso', tipo: 'texto', opciones: [], requerido: false }],
+      notificar: { cuando: 'crear', persona: false, padres: true, profesor: false, director: true, cada: 1 } },
+    { id: 'seg-02', colegio_id: c, nombre: 'Convivencia', descripcion: 'Registro según el Manual de Convivencia (situaciones tipo I, II y III).', anio: anio.anio, fecha_inicial: anio.fecha_inicio, fecha_final: null, registro_unico: false, visible_familia: true, propio: false, activo: true, creado_por: rectora.id, creado_en: cuando(-30, 8),
+      campos: [{ id: 'c1', etiqueta: 'Tipo de situación', tipo: 'opcion', opciones: ['Tipo I', 'Tipo II', 'Tipo III'], requerido: true }, { id: 'c2', etiqueta: 'Descripción de lo ocurrido', tipo: 'parrafo', opciones: [], requerido: true }, { id: 'c3', etiqueta: '¿Se citó al acudiente?', tipo: 'si_no', opciones: [], requerido: false }],
+      notificar: { cuando: 'crear_actualizar', persona: false, padres: true, profesor: false, director: true, cada: 1 } },
+    { id: 'seg-03', colegio_id: c, nombre: 'Enfermería', descripcion: 'Atenciones en enfermería.', anio: anio.anio, fecha_inicial: anio.fecha_inicio, fecha_final: null, registro_unico: false, visible_familia: true, propio: false, activo: true, creado_por: rectora.id, creado_en: cuando(-30, 8),
+      campos: [{ id: 'c1', etiqueta: 'Motivo', tipo: 'texto', opciones: [], requerido: true }, { id: 'c2', etiqueta: 'Atención', tipo: 'varias', opciones: ['Valoración', 'Curación', 'Reposo', 'Se llamó al acudiente', 'Remitido a casa'], requerido: false }, { id: 'c3', etiqueta: 'Observaciones', tipo: 'parrafo', opciones: [], requerido: false }],
+      notificar: { cuando: 'crear', persona: false, padres: true, profesor: false, director: false, cada: 1 } },
+  ];
+  t.seguimiento_registros = [];
+  // 6B: segundo grupo de sexto (como Phidias: un mismo curso con varios grupos que comparten criterios)
+  const c6b = { id: id('cur'), colegio_id: c, sede_id: sede.id, anio_lectivo_id: anio.id, grado_id: grados[0].id, nombre: '6B', director_id: null };
+  t.cursos.push(c6b);
+  for (const [i, m] of materias.entries()) t.asignaciones.push({ id: id('asg'), colegio_id: c, curso_id: c6b.id, materia_id: m.id, profesor_id: profes[profeDe[i]].id, intensidad_horaria: [5, 4, 4, 3, 2][i] });
+  for (const [nom, ape] of [['Lucía', 'Gómez Pardo'], ['Nicolás', 'Beltrán Quintero'], ['Antonella', 'Ramírez Cano'], ['Martín', 'Salazar Duque']]) {
+    const e = persona(nom, ape, 'estudiante');
+    t.matriculas.push({ id: id('mtr'), colegio_id: c, curso_id: c6b.id, estudiante_id: e.id, estado: 'activa', fecha: anio.fecha_inicio });
+  }
   return t;
 }
