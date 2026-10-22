@@ -668,21 +668,61 @@ async function arrancar() {
   }
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     const habiaControlador = !!navigator.serviceWorker.controller;
-    // updateViaCache 'none': el navegador nunca usa una copia vieja de sw.js; al volver a la app se busca versión nueva
-    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
-      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
-    }).catch(() => {});
-    // Cuando se publica una versión nueva, se avisa (sin interrumpir lo que la persona está escribiendo)
+    // updateViaCache 'none': el navegador nunca usa una copia vieja de sw.js
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (!habiaControlador) return;
-      const b = document.createElement('button');
-      b.className = 'aviso ver aviso-version';
-      b.textContent = '🔄 Hay una versión nueva de Complex_. Toca para actualizar.';
-      b.onclick = () => location.reload();
-      document.body.appendChild(b);
+      if (!habiaControlador || sessionStorage.getItem('complex_version_objetivo') === APP_VERSION) return; // esta página ya es la nueva
+      if (Date.now() - cargadaEn < 20000) return location.reload(); // recién abierta: aún no hay nada que perder
+      actualizacionPendiente = true;
+      avisoVersion();
     });
   }
+  buscarVersion(true);
 }
+
+// ---------------------------------------------------------------- Versiones nuevas
+// Al abrir la app y cada vez que vuelve al frente se compara con version.txt del servidor. Si hay una nueva:
+//  - recién abierta (primeros 20 s): se recarga sola, una vez por versión;
+//  - en uso: aviso "Toca para actualizar" (sin borrar lo que se está escribiendo) y se aplica sola
+//    al volver después de MIN_FUERA minutos (cuando también se pide la huella otra vez).
+const cargadaEn = Date.now();
+let actualizacionPendiente = false;
+let ocultaDesde = 0;
+
+function avisoVersion() {
+  if (document.querySelector('.aviso-version')) return;
+  const b = document.createElement('button');
+  b.className = 'aviso ver aviso-version';
+  b.textContent = '🔄 Hay una versión nueva de Complex_. Toca para actualizar.';
+  b.onclick = () => location.reload();
+  document.body.appendChild(b);
+}
+
+async function buscarVersion(puedeRecargar) {
+  if (!/^\d{14}$/.test(APP_VERSION) || !navigator.onLine) return; // en desarrollo (dev) o sin internet, nada
+  let v;
+  try { v = (await (await fetch('version.txt', { cache: 'no-store' })).text()).trim(); } catch { return; }
+  if (!/^\d{14}$/.test(v) || v <= APP_VERSION) return;
+  const reg = await navigator.serviceWorker?.getRegistration().catch(() => null);
+  await reg?.update().catch(() => {});
+  const k = 'complex_recarga_' + v;
+  if (puedeRecargar && (Date.now() - cargadaEn < 20000 || !document.querySelector('.ventana')) && !sessionStorage.getItem(k)) {
+    sessionStorage.setItem(k, '1');
+    sessionStorage.setItem('complex_version_objetivo', v);
+    setTimeout(() => location.reload(), 1500); // un momento para que el service worker nuevo tome los archivos
+    return;
+  }
+  actualizacionPendiente = true;
+  avisoVersion();
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') { ocultaDesde = Date.now(); return; }
+  const largo = !!ocultaDesde && Date.now() - ocultaDesde >= MIN_FUERA * 60000;
+  ocultaDesde = 0;
+  if (largo && actualizacionPendiente) return location.reload();
+  buscarVersion(largo);
+});
 
 // Exportar a Excel (CSV) las tablas de la pantalla actual, como "Exportar xls / csv" de Phidias.
 // Los campos de edición se exportan con su valor; separador ";" y coma decimal (Excel en español).
