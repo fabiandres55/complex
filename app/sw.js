@@ -1,6 +1,6 @@
 // Service worker de Complex_: guarda la app para abrirla rápido y sin internet.
 // Los datos (Supabase) siempre van a la red.
-const VERSION = 'complex-20261022055029';
+const VERSION = 'complex-20261022060318';
 const ARCHIVOS = [
   './', './index.html', './estilos.css', './estilos-rea.css', './manifest.webmanifest', './img/icono.svg', './img/simbolo.svg', './img/logo-complex.svg',
   './js/app.js', './js/config.js', './js/db.js', './js/demo-semilla.js', './js/ui.js', './js/estado.js', './js/calculos.js',
@@ -8,7 +8,8 @@ const ARCHIVOS = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(ARCHIVOS)).then(() => self.skipWaiting()));
+  // cache: 'reload': bajar los archivos frescos del servidor, no la copia de 10 min del navegador (GitHub Pages: max-age=600)
+  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(ARCHIVOS.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
@@ -19,8 +20,9 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   // Red primero (para tener siempre lo último); si no hay internet, lo guardado.
+  // cache: 'no-cache' revalida con el servidor (304 si no cambió): sin esto, tras publicar se seguían viendo archivos viejos hasta 10 min.
   e.respondWith(
-    fetch(e.request).then((r) => {
+    fetch(e.request, { cache: 'no-cache' }).then((r) => {
       const copia = r.clone();
       caches.open(VERSION).then((c) => c.put(e.request, copia));
       return r;

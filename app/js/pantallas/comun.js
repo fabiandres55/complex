@@ -50,6 +50,12 @@ export async function editar({ titulo, tabla, campos, fila, extra = {}, borrable
   botones.push({ texto: 'Cancelar' });
   botones.push({ texto: nuevo ? 'Crear' : 'Guardar', antes: async (c) => {
     const d = convertir(campos, leerForm(c));
+    // Rangos de fechas (…_desde/…_hasta, fecha_inicio/fecha_fin): el final no puede ser antes del inicio (la ventana nunca abriría)
+    for (const ci of campos) {
+      const par = ci.name.endsWith('_desde') ? ci.name.replace(/_desde$/, '_hasta') : ci.name === 'fecha_inicio' ? 'fecha_fin' : null;
+      const cf = par && campos.find((x) => x.name === par);
+      if (cf && d[ci.name] && d[par] && d[par] < d[ci.name]) throw new Error(`"${cf.label}" no puede ser antes de "${ci.label}".`);
+    }
     validar?.(d);
     if (nuevo) {
       const [r] = await E.db.insert(tabla, [{ colegio_id: E.colegio.id, ...extra, ...d }]);

@@ -544,7 +544,10 @@ async function arrancar() {
   }
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     const habiaControlador = !!navigator.serviceWorker.controller;
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    // updateViaCache 'none': el navegador nunca usa una copia vieja de sw.js; al volver a la app se busca versión nueva
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+    }).catch(() => {});
     // Cuando se publica una versión nueva, se avisa (sin interrumpir lo que la persona está escribiendo)
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!habiaControlador) return;
