@@ -13,13 +13,26 @@
 //   db.update(tabla, cambios, eq) → filas
 //   db.remove(tabla, eq)
 //   db.rpc(nombre, args) → resultado
+//   db.escuchar(tabla, filtro, cb) → dejar()   (cambios en vivo: INSERT/UPDATE de la tabla; solo modo real)
+//   db.olvidar()                                (borra la memoria de consultas)
 
 import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 import { crearSemillaDemo } from './demo-semilla.js';
 
 // ---------------------------------------------------------------- Supabase
+// La librería va dentro de la app (un solo archivo, guardado por el service worker): antes se bajaba de jsdelivr
+// en 6 o más pedazos encadenados en cada apertura.
+const LIB_SUPABASE = 'vendor/supabase-2.117.3.js';
+const cargarSupabase = () => (window.supabase?.createClient ? Promise.resolve(window.supabase) : new Promise((ok, mal) => {
+  const el = document.createElement('script');
+  el.src = LIB_SUPABASE;
+  el.onload = () => ok(window.supabase);
+  el.onerror = () => mal(new Error('Sin conexión a internet.'));
+  document.head.appendChild(el);
+}));
+
 export async function crearDbSupabase() {
-  const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/+esm');
+  const { createClient } = await cargarSupabase();
   const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
     // experimental.passkey: entrar con huella (llaves de acceso de Supabase Auth; se activan en el panel: Authentication → Passkeys)
     auth: { persistSession: true, autoRefreshToken: true, storageKey: 'complex_auth', experimental: { passkey: true } },
@@ -56,7 +69,7 @@ export async function crearDbSupabase() {
     return q;
   };
 
-  return {
+  return conMemoria({
     modo: 'real',
     auth: {
       async session() {
@@ -73,7 +86,8 @@ export async function crearDbSupabase() {
         falla(error);
         return { necesitaConfirmar: !data.session };
       },
-      async signOut() { await sb.auth.signOut(); },
+      // scope local: cerrar sesión SOLO en este dispositivo (el global cerraba la sesión en todos los celulares de la persona)
+      async signOut() { await sb.auth.signOut({ scope: 'local' }); },
       async resetPassword(email) {
         const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
         falla(error);
@@ -142,6 +156,52 @@ export async function crearDbSupabase() {
       const { error } = await sb.storage.from(bucket).remove([ruta]);
       falla(error);
     },
+    // Cambios en vivo (Supabase Realtime): la RLS decide qué filas le llegan a cada persona
+    escuchar(tabla, filtro, cb) {
+      const canal = sb.channel(`vivo-${tabla}-${Math.random().toString(36).slice(2)}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: tabla, ...(filtro ? { filter: filtro } : {}) }, (p) => cb(p))
+        .subscribe();
+      return () => sb.removeChannel(canal);
+    },
+  });
+}
+
+// ---------------------------------------------------------------- Memoria de consultas
+// Lo que más pesa en Complex_ es esperar al servidor (EE. UU.: 0,5 a 1 s por consulta). Por eso:
+//  - una consulta igual a otra hecha hace menos de VIDA ms se responde de memoria (volver a una pantalla es instantáneo);
+//  - si dos partes de la pantalla piden lo mismo a la vez, comparten la misma petición;
+//  - cualquier escritura (insert/update/upsert/remove/rpc que no sea de lectura) borra TODA la memoria,
+//    porque los triggers cambian otras tablas (ej. la entrega pasa la nota a la planilla);
+//  - al entrar o salir de una cuenta también se borra (cada persona ve datos distintos).
+const VIDA = 30000;
+const RPC_LECTURA = new Set(['mis_contactos', 'personas_colegio', 'mi_intento']);
+const clonar = (x) => (x == null ? x : typeof structuredClone === 'function' ? structuredClone(x) : JSON.parse(JSON.stringify(x)));
+
+function conMemoria(db) {
+  const memo = new Map();
+  const olvidar = () => memo.clear();
+  const leer = (clave, fn) => {
+    const m = memo.get(clave);
+    if (m && Date.now() - m.t < VIDA) return m.p.then(clonar);
+    const p = fn();
+    memo.set(clave, { t: Date.now(), p });
+    p.catch(() => memo.delete(clave));
+    return p.then(clonar); // copia: las pantallas modifican las filas que reciben
+  };
+  const escribe = (fn) => async (...a) => { try { return await fn(...a); } finally { olvidar(); } };
+  const auth = { ...db.auth };
+  for (const k of ['signIn', 'signUp', 'signOut', 'entrarConHuella']) if (db.auth[k]) auth[k] = escribe(db.auth[k]);
+  return {
+    ...db,
+    auth,
+    olvidar,
+    select: (tabla, q = {}) => leer('s|' + tabla + '|' + JSON.stringify(q), () => db.select(tabla, q)),
+    rpc: (nombre, args) => (RPC_LECTURA.has(nombre) ? leer('r|' + nombre + '|' + JSON.stringify(args ?? null), () => db.rpc(nombre, args)) : escribe(db.rpc)(nombre, args)),
+    insert: escribe(db.insert),
+    upsert: escribe(db.upsert),
+    update: escribe(db.update),
+    remove: escribe(db.remove),
+    escuchar: db.escuchar || (() => () => {}),
   };
 }
 
@@ -388,6 +448,8 @@ export function crearDbDemo() {
       .map((c) => ({ ...c, nombres: P.get(c.perfil_id)?.nombres || '', apellidos: P.get(c.perfil_id)?.apellidos || '' }));
   }
 
+  // Para medir la velocidad sin cuentas reales: localStorage.complex_demo_latencia = '500' hace que cada consulta espere 0,5 s
+  const lento = () => { const ms = Number(localStorage.getItem('complex_demo_latencia')) || 0; return ms ? new Promise((r) => setTimeout(r, ms)) : null; };
   const db = {
     modo: 'demo',
     auth: {
@@ -416,11 +478,13 @@ export function crearDbDemo() {
     },
     reiniciarDemo() { t = crearSemillaDemo(); guardar(); },
     async select(n, q = {}) {
+      await lento();
       let filas = tabla(n).filter((f) => coincide(f, q));
       filas = ordenar(copia(filas), q.order);
       return q.limit ? filas.slice(0, q.limit) : filas;
     },
     async insert(n, filas) {
+      await lento();
       const out = [];
       for (const f of [].concat(filas)) {
         const r = completar(n, f);
@@ -434,6 +498,7 @@ export function crearDbDemo() {
       return out;
     },
     async upsert(n, filas, onConflict) {
+      await lento();
       const k = onConflict ? onConflict.split(',').map((s) => s.trim()) : LLAVES[n] || ['id'];
       const out = [];
       for (const f of [].concat(filas)) {
@@ -447,6 +512,7 @@ export function crearDbDemo() {
       return out;
     },
     async update(n, cambios, eq) {
+      await lento();
       const out = [];
       tabla(n).forEach((f, i) => {
         if (coincide(f, { eq })) { tabla(n)[i] = completar(n, { ...f, ...cambios }); if ('nota' in cambios || 'pendiente_revision' in cambios) aPlanilla(n, tabla(n)[i]);
@@ -456,6 +522,7 @@ export function crearDbDemo() {
       return out;
     },
     async remove(n, eq) {
+      await lento();
       t[n] = tabla(n).filter((f) => !coincide(f, { eq }));
       if (n === 'colegios') {
         for (const k of Object.keys(t)) if (k !== 'perfiles' && k !== 'colegios') t[k] = t[k].filter((f) => f.colegio_id !== eq.id);
@@ -463,6 +530,7 @@ export function crearDbDemo() {
       guardar();
     },
     async rpc(nombre, a) {
+      await lento();
       const yo = usuario();
       if (nombre === 'crear_colegio') {
         const [c] = await db.insert('colegios', [{ nombre: a.p_nombre, ciudad: a.p_ciudad ?? null, nota_min: 1, nota_max: 5, nota_aprobacion: 3, decimales: 1 }]);
@@ -566,5 +634,5 @@ export function crearDbDemo() {
       try { localStorage.setItem(CLAVE_DEMO_ARCHIVOS, JSON.stringify(a)); } catch {}
     },
   };
-  return db;
+  return conMemoria(db);
 }

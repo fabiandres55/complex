@@ -17,6 +17,8 @@
     <div class="cargando pantalla" aria-label="Cargando"><span></span></div>
   </div>
   <noscript>Complex_ necesita JavaScript.</noscript>
+  <!-- La librería de Supabase se baja en paralelo con la app (antes empezaba solo cuando la app ya había cargado) -->
+  <link rel="preload" href="vendor/supabase-2.117.3.js" as="script">
   <script type="module" src="js/app.js"></script>
 </body>
 </html>

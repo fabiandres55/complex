@@ -92,20 +92,21 @@ export async function direccion(m) {
   const cu = dirijo[0];
   const mats = (await E.db.select('matriculas', { eq: { curso_id: cu.id } })).filter((x) => x.estado === 'activa');
   const ests = mats.map((x) => x.estudiante_id);
-  await perfiles(ests);
-  const lista = ests.map((id) => E.perfiles.get(id)).filter(Boolean).sort((x, y) => nombreLista(x).localeCompare(nombreLista(y)));
   const asigs = b.asignaciones.filter((a) => a.curso_id === cu.id);
   const per = b.periodos.find((x) => !x.cerrado) || b.periodos.at(-1);
-  const [asisHoy, acus, segs, ments] = await Promise.all([
+  // Todo a la vez (antes, materia por materia: unos 6 s con la latencia real)
+  const notasP = per ? Promise.all(asigs.map(async (a) => [a.id, await notasDeAsignacion(a, b.periodos.filter((x) => x.numero <= per.numero), ests)])) : Promise.resolve([]);
+  const [, asisHoy, acus, segs, ments] = await Promise.all([
+    perfiles([...ests, ...asigs.map((a) => a.profesor_id)]),
     ests.length ? E.db.select('asistencia', { eq: { fecha: hoy() }, in: { estudiante_id: ests } }) : [],
     ests.length ? E.db.select('acudientes', { in: { estudiante_id: ests } }) : [],
     ests.length ? E.db.select('seguimiento_registros', { in: { estudiante_id: ests } }).catch(() => []) : [],
     ests.length ? E.db.select('menciones', { in: { estudiante_id: ests } }).catch(() => []) : [],
   ]);
-  await perfiles([...acus.map((x) => x.acudiente_id), ...asigs.map((a) => a.profesor_id)]);
+  const lista = ests.map((id) => E.perfiles.get(id)).filter(Boolean).sort((x, y) => nombreLista(x).localeCompare(nombreLista(y)));
+  const [, notasArr] = await Promise.all([perfiles(acus.map((x) => x.acudiente_id)), notasP]);
   // Academia: definitiva del periodo actual por materia
-  const notas = new Map();
-  if (per) for (const a of asigs) notas.set(a.id, await notasDeAsignacion(a, b.periodos.filter((x) => x.numero <= per.numero), ests));
+  const notas = new Map(notasArr);
   const tab = location.hash.includes('tab=academia') ? 'academia' : location.hash.includes('tab=directorio') ? 'directorio' : 'resumen';
   const anot = asisHoy.filter((x) => x.estado !== 'presente');
   let cuerpo = '';

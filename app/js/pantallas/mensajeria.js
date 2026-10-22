@@ -11,6 +11,31 @@ const nombreSeguro = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/
 // Tipos de mensaje del colegio (Circulares, Notificaciones…), cada uno con su color
 const tiposMensaje = () => E.db.select('tipos_mensaje', { eq: { colegio_id: E.colegio.id }, order: 'orden' }).catch(() => []);
 const chipTipo = (tipos, x) => { const tm = x.tipo_id && tipos.find((t) => t.id === x.tipo_id); return tm ? `<span class="chip chip-tipo" style="--c:${esc(tm.color)}">${esc(tm.nombre)}${x.numero ? ' No. ' + x.numero : ''}</span> ` : ''; };
+// Mensajes que se están enviando (o que fallaron): aparecen ya en "Enviados", sin esperar al servidor.
+// El id se crea aquí, así el mensaje no se duplica si se reintenta o si la lista se recarga a mitad del envío.
+const enviando = [];
+const refrescarSi = (prefijo) => { if (location.hash.startsWith(prefijo)) window.dispatchEvent(new HashChangeEvent('hashchange')); };
+async function completarEnvio(pe) {
+  pe.estado = 'enviando'; pe.error = null;
+  try {
+    if (!pe.creado) { await E.db.insert('mensajes', [pe.fila]); pe.creado = true; }
+    if (!pe.conDestinos) { await E.db.insert('mensaje_destinatarios', pe.para.map((id) => ({ mensaje_id: pe.fila.id, colegio_id: pe.fila.colegio_id, perfil_id: id }))); pe.conDestinos = true; }
+    while (pe.archivos.length) {
+      const a = pe.archivos[0];
+      const ruta = `${pe.fila.colegio_id}/${pe.fila.id}/${Date.now()}_${nombreSeguro(a.name)}`;
+      await E.db.subirArchivo(BUCKET, ruta, a);
+      await E.db.insert('mensaje_adjuntos', [{ colegio_id: pe.fila.colegio_id, mensaje_id: pe.fila.id, ruta, nombre: a.name, tipo: a.type || null, bytes: a.size }]);
+      pe.archivos.shift();
+    }
+    enviando.splice(enviando.indexOf(pe), 1);
+    avisarPorCorreo('mensaje', pe.fila.id);
+    aviso('✓ Mensaje enviado');
+  } catch (e) {
+    pe.estado = 'error'; pe.error = e.message;
+    aviso('No se pudo enviar el mensaje: ' + e.message, 'error');
+  }
+  refrescarSi('#/enviados');
+}
 const corto = (s, n = 90) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n) + '…' : t; };
 
 // Mis filas de destinatario (bandeja)
@@ -27,11 +52,11 @@ const TABS = [['entrada', 'Entrada'], ['archivados', 'Archivados'], ['eliminados
 
 export async function bandeja(m, p) {
   const tab = TABS.some((t) => t[0] === p.tab) ? p.tab : 'entrada';
-  const filas = (await misFilas()).filter((d) => (tab === 'eliminados' ? d.eliminado : !d.eliminado && (tab === 'archivados' ? d.archivado : !d.archivado)));
+  const [todas, tipos] = await Promise.all([misFilas(), tiposMensaje()]);
+  const filas = todas.filter((d) => (tab === 'eliminados' ? d.eliminado : !d.eliminado && (tab === 'archivados' ? d.archivado : !d.archivado)));
   const ahoraIso = new Date().toISOString();
   // los mensajes vencidos ya no se ven (en modo real lo hace la RLS; así el demo se comporta igual)
   const fila = new Map(filas.map((d) => [d.mensaje_id, d]));
-  const tipos = await tiposMensaje();
   const msgs = (filas.length ? await E.db.select('mensajes', { in: { id: filas.map((d) => d.mensaje_id) }, order: 'creado_en desc' }) : [])
     .filter((x) => !x.expira_en || x.expira_en > ahoraIso)
     .filter((x) => !p.tipo || (p.tipo === 'ninguno' ? !x.tipo_id : x.tipo_id === p.tipo))
@@ -102,14 +127,41 @@ export async function bandeja(m, p) {
 }
 
 // ---------------------------------------------------------------- Enviados
+let turnoEnviados = 0;
 export async function enviados(m) {
-  const msgs = (await E.db.select('mensajes', { eq: { colegio_id: E.colegio.id, autor_id: E.yo.id }, order: 'creado_en desc' })).filter((x) => !x.autor_eliminado);
+  const turno = ++turnoEnviados; // si llega otra recarga mientras se espera al servidor, gana la más nueva
+  const pend = enviando.filter((pe) => pe.fila.colegio_id === E.colegio.id);
+  const enCurso = new Set(pend.map((pe) => pe.fila.id));
+  const paraDe = (ids) => ids.slice(0, 3).map((id) => nombre(E.perfiles.get(id))).join(', ') + (ids.length > 3 ? ` y ${ids.length - 3} más` : '');
+  const htmlPend = (tipos) => (pend.length ? `<div class="lista bandeja">${pend.map((pe) => `
+        <div class="fila fila-mensaje ${pe.estado === 'error' ? 'envio-fallo' : 'enviando'}">
+          <span class="crece">
+            <span class="linea1"><b>Para: ${esc((pe.nombres?.length ? pe.nombres.slice(0, 3).join(', ') + (pe.nombres.length > 3 ? ` y ${pe.nombres.length - 3} más` : '') : paraDe(pe.para)) || '—')}</b><small>${pe.estado === 'error' ? '⚠️ No se envió' : '⏳ Enviando…'}</small></span>
+            <span class="asunto">${chipTipo(tipos, pe.fila)}${esc(pe.fila.asunto)}</span>
+            ${pe.estado === 'error' ? `<small class="error">${esc(pe.error)}</small>
+              <span class="acciones"><button class="btn btn-chico" data-reintentar="${pe.fila.id}">🔄 Reintentar</button>${pe.creado ? '' : `<button class="btn btn-chico" data-descartar="${pe.fila.id}">Descartar</button>`}</span>` : `<small>${esc(corto(pe.fila.cuerpo))}</small>`}
+          </span>
+        </div>`).join('')}</div>` : '');
+  const cab = cabecera('Enviados', { acciones: '<a class="btn btn-primario" href="#/redactar">✏️ Redactar</a>' });
+  // Lo que se está enviando se pinta YA (sin esperar al servidor); el resto de la lista llega después
+  const conectarPend = () => {
+    m.querySelectorAll('[data-reintentar]').forEach((b) => (b.onclick = () => { const pe = enviando.find((x) => x.fila.id === b.dataset.reintentar); if (pe) { completarEnvio(pe); enviados(m); } }));
+    m.querySelectorAll('[data-descartar]').forEach((b) => (b.onclick = () => { const i = enviando.findIndex((x) => x.fila.id === b.dataset.descartar); if (i >= 0) enviando.splice(i, 1); enviados(m); }));
+  };
+  if (pend.length) { m.innerHTML = cab + `<div class="contenido">${htmlPend([])}<p class="ayuda">Cargando los demás mensajes…</p></div>`; conectarPend(); }
+  const [todos, tipos] = await Promise.all([
+    E.db.select('mensajes', { eq: { colegio_id: E.colegio.id, autor_id: E.yo.id }, order: 'creado_en desc' }),
+    tiposMensaje(),
+    perfiles(pend.flatMap((pe) => pe.para)),
+  ]);
+  const msgs = todos.filter((x) => !x.autor_eliminado && !enCurso.has(x.id));
   const dest = msgs.length ? await E.db.select('mensaje_destinatarios', { in: { mensaje_id: msgs.map((x) => x.id) } }) : [];
   await perfiles(dest.map((d) => d.perfil_id));
-  const tipos = await tiposMensaje();
-  m.innerHTML = cabecera('Enviados', { acciones: '<a class="btn btn-primario" href="#/redactar">✏️ Redactar</a>' }) + `
+  if (turno !== turnoEnviados) return;
+  m.innerHTML = cab + `
     <div class="contenido">
-      ${msgs.length ? `${buscar('Buscar en enviados…')}<div class="lista bandeja">${msgs.map((x) => {
+      ${htmlPend(tipos)}
+      ${msgs.length ?`${buscar('Buscar en enviados…')}<div class="lista bandeja">${msgs.map((x) => {
         const ds = dest.filter((d) => d.mensaje_id === x.id);
         const leidos = ds.filter((d) => d.leido_en).length;
         const para = ds.slice(0, 3).map((d) => nombre(E.perfiles.get(d.perfil_id))).join(', ') + (ds.length > 3 ? ` y ${ds.length - 3} más` : '');
@@ -121,28 +173,33 @@ export async function enviados(m) {
               <small class="${leidos === ds.length && ds.length ? 'ok' : ''}">${leidos === ds.length && ds.length ? '✓✓ Leído por todos' : `✓ Leído por ${leidos} de ${ds.length}`}</small>
             </span>
           </a>`;
-      }).join('')}</div>` : vacio('No has enviado mensajes.')}
+      }).join('')}</div>` : pend.length ? '' : vacio('No has enviado mensajes.')}
     </div>`;
   conectarBuscador(m);
+  conectarPend();
 }
 
 // ---------------------------------------------------------------- Ver mensaje
 export async function detalle(m, p) {
-  const [x] = await E.db.select('mensajes', { eq: { id: p.id } });
+  const [[x], dest, adj] = await Promise.all([
+    E.db.select('mensajes', { eq: { id: p.id } }),
+    E.db.select('mensaje_destinatarios', { eq: { mensaje_id: p.id } }),
+    E.db.select('mensaje_adjuntos', { eq: { mensaje_id: p.id } }),
+  ]);
   if (!x) { m.innerHTML = vacio('Ese mensaje no existe o no tienes acceso.'); return; }
   const soyAutor = x.autor_id === E.yo.id;
-  const [dest, adj] = await Promise.all([
-    E.db.select('mensaje_destinatarios', { eq: { mensaje_id: x.id } }),
-    E.db.select('mensaje_adjuntos', { eq: { mensaje_id: x.id } }),
-  ]);
   const mia = dest.find((d) => d.perfil_id === E.yo.id);
   if (mia && !mia.leido_en) {
-    try { await E.db.update('mensaje_destinatarios', { leido_en: new Date().toISOString() }, { mensaje_id: x.id, perfil_id: E.yo.id }); window.dispatchEvent(new Event('complex:mensajes')); } catch {}
+    // sin esperar: el mensaje se muestra ya y el "leído" se guarda mientras tanto
+    E.db.update('mensaje_destinatarios', { leido_en: new Date().toISOString() }, { mensaje_id: x.id, perfil_id: E.yo.id }).then(() => window.dispatchEvent(new Event('complex:mensajes'))).catch(() => {});
   }
   // hilo: el mensaje al que responde
-  const [original] = x.responde_a ? await E.db.select('mensajes', { eq: { id: x.responde_a } }) : [];
-  const tipos = x.tipo_id ? await E.db.select('tipos_mensaje', { eq: { id: x.tipo_id } }).catch(() => []) : [];
-  await perfiles([x.autor_id, original?.autor_id, ...dest.map((d) => d.perfil_id)]);
+  const [[original], tipos] = await Promise.all([
+    x.responde_a ? E.db.select('mensajes', { eq: { id: x.responde_a } }) : [],
+    x.tipo_id ? E.db.select('tipos_mensaje', { eq: { id: x.tipo_id } }).catch(() => []) : [],
+    perfiles([x.autor_id, ...dest.map((d) => d.perfil_id)]),
+  ]);
+  if (original) await perfiles([original.autor_id]);
   const autor = E.perfiles.get(x.autor_id);
   const visibles = soyAutor || !x.ocultar_destinatarios || !mia ? dest : dest.filter((d) => d.perfil_id === E.yo.id);
   const soloLectura = !soyAutor && !mia; // la familia viendo la bandeja de su hijo
@@ -347,29 +404,19 @@ export async function redactar(m, p) {
     if (!datos.asunto) return aviso('Escribe el asunto.', 'error');
     if (!datos.cuerpo && !archivos.length) return aviso('Escribe el mensaje.', 'error');
     if (archivos.some((a) => a.size > 25 * 1024 * 1024)) return aviso('Un adjunto pesa más de 25 MB.', 'error');
-    b.disabled = true; b.textContent = 'Enviando…';
-    try {
-      const [x] = await E.db.insert('mensajes', [{ colegio_id: E.colegio.id, autor_id: E.yo.id, responde_a: respondeA, ...datos }]);
-      await E.db.insert('mensaje_destinatarios', [...elegidos].map((id) => ({ mensaje_id: x.id, colegio_id: E.colegio.id, perfil_id: id })));
-      for (const a of archivos) {
-        const ruta = `${E.colegio.id}/${x.id}/${Date.now()}_${nombreSeguro(a.name)}`;
-        await E.db.subirArchivo(BUCKET, ruta, a);
-        await E.db.insert('mensaje_adjuntos', [{ colegio_id: E.colegio.id, mensaje_id: x.id, ruta, nombre: a.name, tipo: a.type || null, bytes: a.size }]);
-      }
-      avisarPorCorreo('mensaje', x.id);
-      aviso('Mensaje enviado');
-      location.hash = '#/mensaje/' + x.id;
-    } catch (e) {
-      aviso(e.message, 'error');
-      b.disabled = false; b.textContent = 'Enviar';
-    }
+    b.disabled = true;
+    // Al instante: el mensaje aparece en "Enviados" con "Enviando…" y se guarda en segundo plano
+    const pe = { fila: { id: crypto.randomUUID(), colegio_id: E.colegio.id, autor_id: E.yo.id, responde_a: respondeA, ...datos }, para: [...elegidos], nombres: [...elegidos].map((id) => nombre(porId.get(id))), archivos, estado: 'enviando' };
+    enviando.unshift(pe);
+    completarEnvio(pe);
+    location.hash = '#/enviados';
   };
 }
 
 // ---------------------------------------------------------------- Cartelera (destacados)
 export async function cartelera(m) {
-  const filas = (await misFilas()).filter((d) => !d.eliminado);
-  const propios = await E.db.select('mensajes', { eq: { colegio_id: E.colegio.id, autor_id: E.yo.id, destacado: true } });
+  const [todas, propios] = await Promise.all([misFilas(), E.db.select('mensajes', { eq: { colegio_id: E.colegio.id, autor_id: E.yo.id, destacado: true } })]);
+  const filas = todas.filter((d) => !d.eliminado);
   const recibidos = filas.length ? (await E.db.select('mensajes', { in: { id: filas.map((d) => d.mensaje_id) } })).filter((x) => x.destacado) : [];
   const msgs = [...new Map([...recibidos, ...propios].map((x) => [x.id, x])).values()].sort((a, b) => (a.creado_en < b.creado_en ? 1 : -1));
   await perfiles(msgs.map((x) => x.autor_id));

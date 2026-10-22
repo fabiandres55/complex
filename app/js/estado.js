@@ -23,10 +23,11 @@ export function pref(k, v) {
 
 export async function cargarYo() {
   const id = E.sesion.user.id;
-  const [yo] = await E.db.select('perfiles', { eq: { id } });
+  // perfil y membresías a la vez (antes, una después de la otra)
+  const [[yo], miembros] = await Promise.all([E.db.select('perfiles', { eq: { id } }), E.db.select('miembros', { eq: { perfil_id: id } })]);
   E.yo = yo || { id, nombres: '', apellidos: '' };
   E.perfiles.set(id, E.yo);
-  E.membresias = (await E.db.select('miembros', { eq: { perfil_id: id } })).filter((m) => m.activo);
+  E.membresias = miembros.filter((m) => m.activo);
   const ids = [...new Set(E.membresias.map((m) => m.colegio_id))];
   E.colegios = ids.length ? await E.db.select('colegios', { in: { id: ids }, order: 'nombre' }) : [];
 }

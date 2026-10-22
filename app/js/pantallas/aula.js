@@ -65,15 +65,18 @@ export async function materia(m, p) {
   const b = await base();
   const a = b.asignacionPorId.get(p.asig);
   if (!a) { m.innerHTML = vacio('Esa materia no existe.'); return; }
-  // Secciones de contenido del docente (Phidias): pestañas entre "Notas" y "Tareas"
-  const secciones = await E.db.select('aula_secciones', { eq: { asignacion_id: a.id }, order: 'orden' }).catch(() => []);
+  // Secciones de contenido del docente (Phidias): pestañas entre "Notas" y "Tareas"; todo a la vez
+  const [secciones, todasTareas] = await Promise.all([
+    E.db.select('aula_secciones', { eq: { asignacion_id: a.id }, order: 'orden' }).catch(() => []),
+    E.db.select('tareas', { eq: { asignacion_id: a.id }, order: 'publicada_en desc' }),
+    perfiles([a.profesor_id]),
+  ]);
   const tabs = [TABS[0], TABS[1], ...secciones.map((s) => ['s:' + s.id, s.nombre]), TABS[2], TABS[3]];
   const tab = tabs.some((t) => t[0] === p.tab) ? p.tab : 'tablero';
   const seccion = tab.startsWith('s:') ? secciones.find((s) => 's:' + s.id === tab) : null;
   const per = b.periodos.find((x) => x.id === p.periodo) || b.periodos.find((x) => !x.cerrado) || b.periodos.at(-1);
   const est = esProfe() ? null : personaActiva();
-  await perfiles([a.profesor_id]);
-  const tareas = (await E.db.select('tareas', { eq: { asignacion_id: a.id }, order: 'publicada_en desc' })).filter((t) => esProfe() || new Date(t.publicada_en) <= new Date());
+  const tareas = todasTareas.filter((t) => esProfe() || new Date(t.publicada_en) <= new Date());
   const entregas = tareas.length ? await E.db.select('tarea_entregas', { in: { tarea_id: tareas.map((t) => t.id) } }) : [];
   const mia = (t) => entregas.find((x) => x.tarea_id === t.id && x.estudiante_id === est);
   let html = '';

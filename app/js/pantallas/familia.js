@@ -12,23 +12,28 @@ import { notaPeriodo, notaConIndicadores, notaIndicador, definitiva, notaFinal, 
 
 // Junta todo lo académico de un estudiante en el año activo
 async function cargarEstudiante(estId) {
-  const b = await base();
-  await perfiles([estId]);
+  // 1) todo lo que solo depende del estudiante, a la vez (antes: 6 esperas seguidas)
+  const [b, , mats, notas, asis, recs, ments, rems] = await Promise.all([
+    base(),
+    perfiles([estId]),
+    E.db.select('matriculas', { eq: { estudiante_id: estId } }),
+    E.db.select('calificaciones', { eq: { estudiante_id: estId } }),
+    E.db.select('asistencia', { eq: { estudiante_id: estId }, order: 'fecha desc' }),
+    E.db.select('recuperaciones', { eq: { estudiante_id: estId } }),
+    E.db.select('menciones', { eq: { estudiante_id: estId }, order: 'fecha desc' }),
+    E.db.select('remediales', { eq: { estudiante_id: estId } }).catch(() => []),
+  ]);
   const est = E.perfiles.get(estId);
-  const mats = await E.db.select('matriculas', { eq: { estudiante_id: estId } });
   const mat = mats.find((x) => x.estado === 'activa' && b.cursos.some((c) => c.id === x.curso_id)) || mats.find((x) => b.cursos.some((c) => c.id === x.curso_id));
   const curso = mat && b.cursoPorId.get(mat.curso_id);
   const asigs = curso ? b.asignaciones.filter((a) => a.curso_id === curso.id) : [];
-  const acts = asigs.length ? await E.db.select('actividades', { in: { asignacion_id: asigs.map((a) => a.id) }, order: ['fecha', 'nombre'] }) : [];
-  const [notas, asis, inds, recs, ments] = await Promise.all([
-    E.db.select('calificaciones', { eq: { estudiante_id: estId } }),
-    E.db.select('asistencia', { eq: { estudiante_id: estId }, order: 'fecha desc' }),
-    asigs.length ? E.db.select('indicadores', { in: { asignacion_id: asigs.map((a) => a.id) }, order: 'numero' }) : [],
-    E.db.select('recuperaciones', { eq: { estudiante_id: estId } }),
-    E.db.select('menciones', { eq: { estudiante_id: estId }, order: 'fecha desc' }),
-  ]);
-  const rems = await E.db.select('remediales', { eq: { estudiante_id: estId } }).catch(() => []);
+  // 2) actividades y criterios de sus materias, a la vez
+  const [acts, inds] = asigs.length ? await Promise.all([
+    E.db.select('actividades', { in: { asignacion_id: asigs.map((a) => a.id) }, order: ['fecha', 'nombre'] }),
+    E.db.select('indicadores', { in: { asignacion_id: asigs.map((a) => a.id) }, order: 'numero' }),
+  ]) : [[], []];
   const nota = Object.fromEntries(notas.map((n) => [n.actividad_id, n.valor]));
+  // 3) experiencias de esos criterios
   const exps = inds.length ? await E.db.select('experiencias', { in: { indicador_id: inds.map((x) => x.id) } }) : [];
   // por materia: nota de cada periodo y final
   const materias = asigs.map((a) => {

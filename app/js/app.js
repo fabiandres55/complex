@@ -1,6 +1,6 @@
 // Complex_ — arranque, enrutador y armazón de la app.
 import { crearDbSupabase, crearDbDemo, huellaEnEsteEquipo } from './db.js';
-import { E, pref, cargarYo, elegirColegio, cambiarRol, cargarPersonas, elegirPersona, personaActiva, viendoHijo, logoHTML, aplicarMarca } from './estado.js';
+import { E, pref, base, cargarYo, elegirColegio, cambiarRol, cargarPersonas, elegirPersona, personaActiva, viendoHijo, logoHTML, aplicarMarca } from './estado.js';
 import { esc, $, aviso, ventana, leerForm, confirmar, ROL, nombre, iniciales, etiquetarTablas, fecha, fechaHora } from './ui.js';
 import { APP_VERSION } from './config.js';
 import * as admin from './pantallas/admin.js';
@@ -389,16 +389,10 @@ function pantallaEntrar(modo = 'entrar') {
   };
 }
 
-// ¿Esta persona pidió la huella al abrir Complex_ en este dispositivo?
-// Si nunca lo decidió: sí, cuando ya tiene una llave de acceso.
+// ¿Esta persona pidió la huella al abrir Complex_ EN ESTE dispositivo? Solo si la activó aquí
+// (una llave creada en otro celular no basta: este podría no tenerla y quedaría bloqueado).
 async function pideHuella() {
-  if (E.db.modo !== 'real' || !window.PublicKeyCredential) return false;
-  let v = pref(claveBloqueo());
-  if (v === undefined) {
-    try { v = (await E.db.auth.huellas()).length > 0; } catch { return false; }
-    pref(claveBloqueo(), v);
-  }
-  return !!v;
+  return E.db.modo === 'real' && !!window.PublicKeyCredential && pref(claveBloqueo()) === true;
 }
 
 function pantallaBloqueo() {
@@ -442,20 +436,23 @@ document.addEventListener('visibilitychange', async () => {
 async function ofrecerHuella() {
   const clave = 'huella_ofrecida_' + E.sesion?.user?.id;
   if (E.db.modo !== 'real' || !E.sesion || pref(clave)) return;
-  if (!(await E.db.auth.huellaDisponible())) return;
-  try { if ((await E.db.auth.huellas()).length) return pref(clave, 1); } catch { return; } // sin huella activada en el servidor: no molestar
+  if (pref(claveBloqueo()) === true || !(await E.db.auth.huellaDisponible())) return;
+  try { await E.db.auth.huellas(); } catch { return; } // sin huella activada en el servidor: no molestar
   pref(clave, 1);
   const si = await ventana({
     titulo: 'Entrar con tu huella',
-    html: '<p>¿Quieres entrar a Complex_ con tu huella la próxima vez, sin escribir la contraseña?</p><p class="ayuda">Tu huella no sale del celular: Complex_ solo guarda una llave de acceso. Puedes quitarla cuando quieras en "Más".</p>',
+    html: '<p>¿Quieres que Complex_ te pida la huella cada vez que la abras en este dispositivo, en vez de la contraseña?</p><p class="ayuda">Tu huella no sale del celular: Complex_ solo guarda una llave de acceso. Puedes quitarla cuando quieras en "Más".</p>',
     botones: [{ texto: 'Ahora no' }, { texto: '👆 Activar', valor: true }],
   });
   if (si) await activarHuella();
 }
 
 async function activarHuella() {
-  try { await E.db.auth.registrarHuella(); pref(claveBloqueo(), true); aviso('Listo: Complex_ te pedirá la huella cada vez que la abras'); return true; }
-  catch (e) { aviso(e.message, 'error'); return false; }
+  try { await E.db.auth.registrarHuella(); }
+  catch (e) { if (!/ya tiene tu huella registrada/.test(e.message)) { aviso(e.message, 'error'); return false; } }
+  pref(claveBloqueo(), true);
+  aviso('Listo: Complex_ te pedirá la huella cada vez que la abras en este dispositivo');
+  return true;
 }
 
 async function olvido() {
@@ -553,7 +550,7 @@ async function perfil() {
       <h2>Entrar con huella</h2>
       <p class="ayuda">Entra a Complex_ con la huella o el rostro de tu celular, sin escribir la contraseña. Tu huella no sale del celular: Complex_ solo guarda una llave de acceso.</p>
       <div class="lista" data-huellas></div>
-      <label class="fila" data-bloqueo-fila hidden><input type="checkbox" data-bloqueo><span><b>Pedir la huella al abrir Complex_</b><small>Como las apps de bancos: cada vez que abras la app en este dispositivo, o vuelvas después de ${MIN_FUERA} minutos.</small></span></label>
+      <label class="fila" data-bloqueo-fila hidden><input type="checkbox" data-bloqueo><span><b>Pedir la huella al abrir Complex_</b><small>Solo en este dispositivo: cada vez que abras la app, o vuelvas después de ${MIN_FUERA} minutos.</small></span></label>
       <button class="btn" data-activar-huella>👆 Activar en este dispositivo</button>
     </section>
     ${E.rol === 'admin' ? `<section class="tarjeta"><h2>Colegio</h2><a class="fila fila-boton" href="#/ajustes-colegio"><span>⚙️</span><span><b>Ajustes del colegio</b><small>Nombre, escala de notas</small></span></a></section>` : ''}
@@ -604,8 +601,12 @@ async function pintarHuellas(m) {
   const chk = s.querySelector('[data-bloqueo]');
   s.querySelector('[data-bloqueo-fila]').hidden = !l.length;
   if (!l.length) pref(claveBloqueo(), false);
-  chk.checked = !!l.length && pref(claveBloqueo()) !== false;
-  chk.onchange = () => { pref(claveBloqueo(), chk.checked); aviso(chk.checked ? 'Complex_ te pedirá la huella al abrir' : 'Complex_ ya no te pedirá la huella al abrir'); };
+  chk.checked = !!l.length && pref(claveBloqueo()) === true;
+  chk.onchange = async () => {
+    if (chk.checked) { chk.checked = await activarHuella(); return pintarHuellas(m); } // comprueba que este dispositivo pueda usar la llave
+    pref(claveBloqueo(), false);
+    aviso('Complex_ ya no te pedirá la huella al abrir en este dispositivo');
+  };
   s.querySelector('[data-activar-huella]').onclick = async () => { if (await activarHuella()) pintarHuellas(m); };
   s.querySelectorAll('[data-quitar-huella]').forEach((b) => (b.onclick = async () => {
     if (!(await confirmar('¿Quitar esta llave?', 'Con ella ya no podrás entrar con huella en ese dispositivo. Podrás activarla de nuevo.', 'Quitar'))) return;
@@ -614,6 +615,8 @@ async function pintarHuellas(m) {
 }
 
 async function salir() {
+  dejarDeEscuchar?.();
+  dejarDeEscuchar = null;
   await E.db.auth.signOut();
   E.sesion = null; E.colegio = null; E.yo = null;
   // que el siguiente usuario de este equipo no herede pestañas, hijos ni datos del anterior
@@ -634,7 +637,24 @@ async function arrancarSesion() {
   if (E.colegios.some((c) => c.id === guardado)) await elegirColegio(guardado);
   else if (E.colegios.length === 1) await elegirColegio(E.colegios[0].id);
   else E.colegio = null;
+  if (E.colegio) base().catch(() => {}); // los datos del colegio se piden ya, mientras se arma la pantalla
+  escucharMensajes();
   navegar();
+}
+
+// Mensajes al instante: cuando le llega un mensaje a la persona, la bandeja y el contador se actualizan solos
+let dejarDeEscuchar = null;
+function escucharMensajes() {
+  dejarDeEscuchar?.();
+  dejarDeEscuchar = null;
+  if (!E.sesion || !E.yo || E.db.modo !== 'real') return;
+  dejarDeEscuchar = E.db.escuchar('mensaje_destinatarios', `perfil_id=eq.${E.yo.id}`, (p) => {
+    if (p.eventType !== 'INSERT') return;
+    E.db.olvidar();
+    window.dispatchEvent(new Event('complex:mensajes'));
+    if (/^#\/(bandeja|inicio|cartelera)?(\?|$)/.test(location.hash || '#/')) navegar();
+    aviso('📩 Te llegó un mensaje nuevo');
+  });
 }
 
 async function arrancar() {

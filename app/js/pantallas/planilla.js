@@ -44,14 +44,18 @@ export async function planilla(m, p) {
     E.db.select('indicadores', { eq: { asignacion_id: asig.id, periodo_id: per.id }, order: 'numero' }),
     E.db.select('recuperaciones', { eq: { asignacion_id: asig.id, periodo_id: per.id } }),
   ]);
-  const exps = inds.length ? (await E.db.select('experiencias', { in: { indicador_id: inds.map((x) => x.id) } })).sort((x, y) => x.numero - y.numero) : [];
+  // experiencias y notas a la vez (las dos solo dependen de lo anterior)
+  const [exps0, notas] = await Promise.all([
+    inds.length ? E.db.select('experiencias', { in: { indicador_id: inds.map((x) => x.id) } }) : [],
+    acts0.length ? E.db.select('calificaciones', { in: { actividad_id: acts0.map((a) => a.id) } }) : [],
+  ]);
+  const exps = [...exps0].sort((x, y) => x.numero - y.numero);
   const expsDe = (indId) => exps.filter((x) => x.indicador_id === indId);
   const ordenInd = new Map(inds.map((x, i) => [x.id, i]));
   const ordenExp = new Map(exps.map((x, i) => [x.id, i]));
   // columnas: criterio → experiencia → fecha
   const acts = [...acts0].sort((a, z) => (ordenInd.get(a.indicador_id) ?? 999) - (ordenInd.get(z.indicador_id) ?? 999)
     || (ordenExp.get(a.experiencia_id) ?? 999) - (ordenExp.get(z.experiencia_id) ?? 999));
-  const notas = acts.length ? await E.db.select('calificaciones', { in: { actividad_id: acts.map((a) => a.id) } }) : [];
   const nota = new Map(notas.map((n) => [n.actividad_id + '|' + n.estudiante_id, n.valor]));
   const rec = new Map(recs.map((r) => [r.estudiante_id, r.nota]));
   const col = E.colegio;

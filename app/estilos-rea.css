@@ -346,3 +346,8 @@ fieldset.tambien legend { font-weight: 600; font-size: 13px; padding: 0 6px; }
 /* Tipos de mensaje (REA Phidias §3.1): etiqueta con el color del tipo */
 .chip-tipo { background: color-mix(in srgb, var(--c) 16%, transparent); color: var(--texto); border: 1px solid color-mix(in srgb, var(--c) 55%, transparent); }
 .filtros-bandeja { margin: 8px 0; } .filtros-bandeja label { display: flex; gap: 6px; align-items: center; font-size: 14px; }
+
+/* Mensajes que se están enviando (aparecen al instante) o que fallaron */
+.fila-mensaje.enviando { opacity: .7; }
+.fila-mensaje.envio-fallo { box-shadow: inset 3px 0 0 var(--peligro); }
+.fila-mensaje.envio-fallo .acciones { display: flex; gap: 6px; margin-top: 6px; }
