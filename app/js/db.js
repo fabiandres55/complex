@@ -6,6 +6,7 @@
 // Interfaz:
 //   db.auth.session() → { user: {id, email} } | null
 //   db.auth.signIn(email, pass) / signUp(email, pass, meta) / signOut() / resetPassword(email)
+//   db.auth.huellaDisponible() / registrarHuella() / entrarConHuella() / huellas() / borrarHuella(id)  (llaves de acceso)
 //   db.select(tabla, { eq, in, order, limit }) → filas
 //   db.insert(tabla, filas) → filas
 //   db.upsert(tabla, filas, onConflict) → filas
@@ -18,14 +19,28 @@ import { crearSemillaDemo } from './demo-semilla.js';
 
 // ---------------------------------------------------------------- Supabase
 export async function crearDbSupabase() {
-  const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm');
+  const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/+esm');
   const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
-    auth: { persistSession: true, autoRefreshToken: true, storageKey: 'complex_auth' },
+    // experimental.passkey: entrar con huella (llaves de acceso de Supabase Auth; se activan en el panel: Authentication → Passkeys)
+    auth: { persistSession: true, autoRefreshToken: true, storageKey: 'complex_auth', experimental: { passkey: true } },
   });
 
   const falla = (error) => {
     if (!error) return;
     throw new Error(traducirError(error.message || String(error)));
+  };
+  // Errores de la huella (WebAuthn + Supabase) en palabras de la persona
+  const fallaHuella = (error) => {
+    if (!error) return;
+    const t = [error.code, error.error_code, error.name, error.message].filter(Boolean).join(' ');
+    if (/passkey_disabled/i.test(t)) throw new Error('La entrada con huella aún no está activada en Complex_.');
+    if (/NotAllowed|CEREMONY_ABORTED|AbortError|cancel/i.test(t)) throw new Error('Se canceló la huella.');
+    if (/webauthn_credential_exists|InvalidState/i.test(t)) throw new Error('Este dispositivo ya tiene tu huella registrada.');
+    if (/webauthn_credential_not_found/i.test(t)) throw new Error('Esa llave ya no está registrada. Entra con tu contraseña y activa la huella de nuevo.');
+    if (/too_many_passkeys/i.test(t)) throw new Error('Ya tienes el máximo de llaves registradas. Quita alguna en "Más".');
+    if (/challenge_expired/i.test(t)) throw new Error('Pasó mucho tiempo. Intenta de nuevo.');
+    if (/NotSupported|SecurityError/i.test(t)) throw new Error('Este navegador no permite entrar con huella.');
+    falla(error);
   };
 
   const aplicar = (q, { eq, in: en, order, limit } = {}) => {
@@ -65,6 +80,11 @@ export async function crearDbSupabase() {
       },
       // setTimeout: el aviso llega con el candado de la sesión tomado (p. ej. al renovar el token al abrir);
       // si cb pidiera la sesión ahí mismo, ambos se esperarían para siempre y la app quedaría "cargando" (pasó el 22-oct).
+      async huellaDisponible() { return huellaEnEsteEquipo(); },
+      async registrarHuella() { const { data, error } = await sb.auth.registerPasskey(); fallaHuella(error); return data; },
+      async entrarConHuella() { const { error } = await sb.auth.signInWithPasskey(); fallaHuella(error); },
+      async huellas() { const { data, error } = await sb.auth.passkey.list(); fallaHuella(error); return data || []; },
+      async borrarHuella(id) { const { error } = await sb.auth.passkey.delete({ passkeyId: id }); fallaHuella(error); },
       onChange(cb) { sb.auth.onAuthStateChange((evento) => { setTimeout(() => cb(evento), 0); }); },
       async updatePassword(nueva) { const { error } = await sb.auth.updateUser({ password: nueva }); falla(error); },
     },
@@ -123,6 +143,11 @@ export async function crearDbSupabase() {
       falla(error);
     },
   };
+}
+
+// ¿El equipo tiene huella / rostro / PIN para llaves de acceso?
+export async function huellaEnEsteEquipo() {
+  try { return !!window.PublicKeyCredential && (await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()); } catch { return false; }
 }
 
 function traducirError(m) {
@@ -375,6 +400,11 @@ export function crearDbDemo() {
       async signUp() { err('En el modo demo no se crean cuentas.'); },
       async signOut() { localStorage.removeItem(CLAVE_DEMO_USUARIO); },
       async updatePassword() { err('En el modo demo no se cambian contraseñas.'); },
+      async huellaDisponible() { return false; }, // en el demo no hay cuentas reales
+      async registrarHuella() { err('En el modo demo no se usa la huella.'); },
+      async entrarConHuella() { err('En el modo demo no se usa la huella.'); },
+      async huellas() { return []; },
+      async borrarHuella() {},
       async resetPassword() {},
       onChange() {},
     },

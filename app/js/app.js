@@ -1,7 +1,7 @@
 // Complex_ — arranque, enrutador y armazón de la app.
-import { crearDbSupabase, crearDbDemo } from './db.js';
+import { crearDbSupabase, crearDbDemo, huellaEnEsteEquipo } from './db.js';
 import { E, pref, cargarYo, elegirColegio, cambiarRol, cargarPersonas, elegirPersona, personaActiva, viendoHijo, logoHTML, aplicarMarca } from './estado.js';
-import { esc, $, aviso, ventana, leerForm, ROL, nombre, iniciales, etiquetarTablas } from './ui.js';
+import { esc, $, aviso, ventana, leerForm, confirmar, ROL, nombre, iniciales, etiquetarTablas, fecha, fechaHora } from './ui.js';
 import { APP_VERSION } from './config.js';
 import * as admin from './pantallas/admin.js';
 import * as profe from './pantallas/profesor.js';
@@ -325,6 +325,7 @@ function pantallaEntrar(modo = 'entrar') {
           <button class="btn btn-primario btn-ancho" type="submit">${registro ? 'Crear cuenta' : 'Entrar'}</button>
           <p class="error" id="err-entrar" role="alert"></p>
         </form>
+        ${registro ? '' : '<button class="btn btn-ancho" id="btn-huella" hidden>👆 Entrar con huella</button>'}
         <div class="entrada-pie">
           ${registro ? '<button class="btn-link" data-ir="entrar">Ya tengo cuenta</button>' : '<button class="btn-link" data-ir="registro">Crear cuenta</button> · <button class="btn-link" data-ir="olvido">Olvidé mi contraseña</button>'}
         </div>
@@ -336,6 +337,20 @@ function pantallaEntrar(modo = 'entrar') {
     </div>`;
   app.querySelectorAll('[data-ir]').forEach((b) => (b.onclick = () => (b.dataset.ir === 'olvido' ? olvido() : pantallaEntrar(b.dataset.ir))));
   $('#btn-demo').onclick = entrarDemo;
+  // Entrar con huella (llave de acceso): solo si el equipo la tiene
+  const bHuella = $('#btn-huella');
+  if (bHuella) huellaEnEsteEquipo().then((si) => { bHuella.hidden = !si; });
+  bHuella?.addEventListener('click', async () => {
+    const err = $('#err-entrar');
+    err.textContent = '';
+    bHuella.disabled = true;
+    try {
+      if (E.db.modo !== 'real') E.db = await crearDbSupabase();
+      await E.db.auth.entrarConHuella();
+      pref('modo', 'real');
+      await arrancarSesion();
+    } catch (er) { err.textContent = er.message; } finally { bHuella.disabled = false; }
+  });
   $('#f-entrar').onsubmit = async (e) => {
     e.preventDefault();
     const d = leerForm(e.target);
@@ -360,10 +375,31 @@ function pantallaEntrar(modo = 'entrar') {
       }
       pref('modo', 'real');
       await arrancarSesion();
+      if (!registro) ofrecerHuella();
     } catch (er) {
       err.textContent = er.message;
     } finally { b.disabled = false; }
   };
+}
+
+// Después de entrar con contraseña: ofrecer la huella una sola vez por persona y dispositivo (como las apps de bancos)
+async function ofrecerHuella() {
+  const clave = 'huella_ofrecida_' + E.sesion?.user?.id;
+  if (E.db.modo !== 'real' || !E.sesion || pref(clave)) return;
+  if (!(await E.db.auth.huellaDisponible())) return;
+  try { if ((await E.db.auth.huellas()).length) return pref(clave, 1); } catch { return; } // sin huella activada en el servidor: no molestar
+  pref(clave, 1);
+  const si = await ventana({
+    titulo: 'Entrar con tu huella',
+    html: '<p>¿Quieres entrar a Complex_ con tu huella la próxima vez, sin escribir la contraseña?</p><p class="ayuda">Tu huella no sale del celular: Complex_ solo guarda una llave de acceso. Puedes quitarla cuando quieras en "Más".</p>',
+    botones: [{ texto: 'Ahora no' }, { texto: '👆 Activar', valor: true }],
+  });
+  if (si) await activarHuella();
+}
+
+async function activarHuella() {
+  try { await E.db.auth.registrarHuella(); aviso('Listo: la próxima vez entra con tu huella'); return true; }
+  catch (e) { aviso(e.message, 'error'); return false; }
 }
 
 async function olvido() {
@@ -457,6 +493,12 @@ async function perfil() {
     ${'avisos_correo' in E.yo || E.db.modo === 'demo' ? `<section class="tarjeta"><h2>Avisos por correo</h2>
       <label class="fila"><input type="checkbox" id="chk-avisos" ${E.yo.avisos_correo !== false ? 'checked' : ''}><span><b>Avisarme por correo</b><small>Te escribimos a ${esc(E.sesion?.user?.email?.endsWith('@usuarios.complex') ? 'tu correo (aún no tienes uno registrado)' : E.sesion?.user?.email || E.yo.correo || 'tu correo')} cuando te llegue un mensaje o una circular.</small></span></label>
     </section>` : ''}
+    <section class="tarjeta" id="sec-huella" hidden>
+      <h2>Entrar con huella</h2>
+      <p class="ayuda">Entra a Complex_ con la huella o el rostro de tu celular, sin escribir la contraseña. Tu huella no sale del celular: Complex_ solo guarda una llave de acceso.</p>
+      <div class="lista" data-huellas></div>
+      <button class="btn" data-activar-huella>👆 Activar en este dispositivo</button>
+    </section>
     ${E.rol === 'admin' ? `<section class="tarjeta"><h2>Colegio</h2><a class="fila fila-boton" href="#/ajustes-colegio"><span>⚙️</span><span><b>Ajustes del colegio</b><small>Nombre, escala de notas</small></span></a></section>` : ''}
     <section class="tarjeta">
       <h2>Apariencia</h2>
@@ -489,6 +531,24 @@ async function perfil() {
   $('#btn-cambiar-rol')?.addEventListener('click', elegirRol);
   $('#btn-cambiar-colegio').onclick = () => { E.colegio = null; navegar(); };
   $('#btn-salir').onclick = salir;
+  if (E.db.modo === 'real' && window.PublicKeyCredential) pintarHuellas(m);
+}
+
+// Llaves de acceso de la persona (una por celular o administrador de contraseñas)
+async function pintarHuellas(m) {
+  const s = m.querySelector('#sec-huella');
+  let l;
+  try { l = await E.db.auth.huellas(); } catch { return; } // sin huella activada en el servidor: la sección no se muestra
+  s.hidden = false;
+  s.querySelector('[data-huellas]').innerHTML = l.length ? l.map((h) => `
+    <div class="fila"><span class="avatar">🔑</span><span class="crece"><b>${esc(h.friendly_name || 'Llave de acceso')}</b><small>Activada el ${fecha(h.created_at)}${h.last_used_at ? ' · usada ' + fechaHora(h.last_used_at) : ''}</small></span>
+      <button class="btn btn-chico btn-peligro" data-quitar-huella="${esc(h.id)}">Quitar</button></div>`).join('') : '<p class="ayuda">Aún no la has activado.</p>';
+  s.querySelector('[data-activar-huella]').hidden = !(await E.db.auth.huellaDisponible());
+  s.querySelector('[data-activar-huella]').onclick = async () => { if (await activarHuella()) pintarHuellas(m); };
+  s.querySelectorAll('[data-quitar-huella]').forEach((b) => (b.onclick = async () => {
+    if (!(await confirmar('¿Quitar esta llave?', 'Con ella ya no podrás entrar con huella en ese dispositivo. Podrás activarla de nuevo.', 'Quitar'))) return;
+    try { await E.db.auth.borrarHuella(b.dataset.quitarHuella); aviso('Llave quitada'); pintarHuellas(m); } catch (e) { aviso(e.message, 'error'); }
+  }));
 }
 
 async function salir() {
