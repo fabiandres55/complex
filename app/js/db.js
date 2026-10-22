@@ -163,40 +163,118 @@ export async function crearDbSupabase() {
         .subscribe();
       return () => sb.removeChannel(canal);
     },
-  });
+  }, { persistir: true }); // en modo real lo consultado se guarda en el equipo para abrir al instante
 }
 
 // ---------------------------------------------------------------- Memoria de consultas
-// Lo que más pesa en Complex_ es esperar al servidor (EE. UU.: 0,5 a 1 s por consulta). Por eso:
-//  - una consulta igual a otra hecha hace menos de VIDA ms se responde de memoria (volver a una pantalla es instantáneo);
+// Lo que más pesa en Complex_ es esperar al servidor (EE. UU.: 0,5 a 1 s por consulta). Por eso las pantallas
+// se pintan con lo que ya se sabe y se actualizan solas (como WhatsApp o las apps de bancos):
+//  - lo consultado hace menos de VIDA ms se responde de memoria, sin preguntar al servidor;
+//  - lo más viejo también se muestra YA, y por detrás se pide lo nuevo: si cambió, la pantalla se vuelve a pintar
+//    (evento 'complex:datos-nuevos', que app.js atiende sin parpadeo ni perder el scroll);
 //  - si dos partes de la pantalla piden lo mismo a la vez, comparten la misma petición;
-//  - cualquier escritura (insert/update/upsert/remove/rpc que no sea de lectura) borra TODA la memoria,
-//    porque los triggers cambian otras tablas (ej. la entrega pasa la nota a la planilla);
-//  - al entrar o salir de una cuenta también se borra (cada persona ve datos distintos).
+//  - al escribir en una tabla, lo de esa tabla (y lo que cambian sus triggers) se pide de nuevo al servidor,
+//    y todo lo demás queda "por revisar" (se muestra y se actualiza por detrás);
+//  - en modo real se guarda en el equipo (IndexedDB, no localStorage: así no le quita espacio a Relax,
+//    que vive en el mismo dominio) para abrir la app al instante; se borra al cerrar sesión.
 const VIDA = 30000;
 const RPC_LECTURA = new Set(['mis_contactos', 'personas_colegio', 'mi_intento']);
+// Escrituras que también cambian otras tablas (triggers del servidor o lógica de la app)
+const AFECTA = {
+  tarea_entregas: ['calificaciones'], examenes: ['calificaciones'], examen_intentos: ['calificaciones'],
+  actividades: ['calificaciones'], indicadores: ['actividades', 'experiencias'], experiencias: ['actividades'],
+  mensajes: ['tipos_mensaje', 'mensaje_destinatarios'], reportes_ausencia: ['asistencia'],
+  entregar_examen: ['examen_intentos', 'calificaciones'], iniciar_examen: ['examen_intentos'],
+  agregar_miembro: ['miembros', 'perfiles'], crear_colegio: ['colegios', 'miembros'],
+};
 const clonar = (x) => (x == null ? x : typeof structuredClone === 'function' ? structuredClone(x) : JSON.parse(JSON.stringify(x)));
 
-function conMemoria(db) {
-  const memo = new Map();
-  const olvidar = () => memo.clear();
+// IndexedDB mínimo (una sola "tabla" de llave → valor)
+let idbP = null;
+const idb = () => (idbP ??= new Promise((ok, mal) => {
+  const r = indexedDB.open('complex', 1);
+  r.onupgradeneeded = () => r.result.createObjectStore('memo');
+  r.onsuccess = () => ok(r.result);
+  r.onerror = () => mal(r.error);
+}));
+const idbHacer = async (modo, fn) => { const d = await idb(); return new Promise((ok, mal) => { const tx = d.transaction('memo', modo); const r = fn(tx.objectStore('memo')); tx.oncomplete = () => ok(r?.result); tx.onerror = () => mal(tx.error); }); };
+
+function conMemoria(db, { persistir = false } = {}) {
+  const memo = new Map(); // clave → { t, datos } | { p } (pidiéndose por primera vez)
+  let gen = 0; // sube con cada escritura: una respuesta que salió antes de escribir no se guarda
+  let uid = null, hidratado = null, guardarT = null, avisarT = null;
+  const tablaDe = (clave) => clave.split('|')[1];
+  const avisarCambio = () => { clearTimeout(avisarT); avisarT = setTimeout(() => window.dispatchEvent(new Event('complex:datos-nuevos')), 300); };
+  const guardarLuego = () => {
+    if (!persistir || !uid) return;
+    clearTimeout(guardarT);
+    guardarT = setTimeout(() => {
+      const entradas = [...memo].filter(([, v]) => v.datos !== undefined).sort((a, b) => b[1].t - a[1].t).slice(0, 400).map(([k, v]) => [k, v.datos]);
+      idbHacer('readwrite', (s) => s.put({ t: Date.now(), entradas }, 'memo:' + uid)).catch(() => {});
+    }, 2000);
+  };
+  const hidratar = async (id) => {
+    if (hidratado === id) return;
+    hidratado = id;
+    const v = await idbHacer('readonly', (s) => s.get('memo:' + id)).catch(() => null);
+    if (!v || Date.now() - v.t > 7 * 864e5) return;
+    for (const [k, datos] of v.entradas) if (!memo.has(k)) memo.set(k, { t: 0, datos }); // t 0: se muestra y se revisa
+  };
+  const olvidar = () => { memo.clear(); gen++; };
   const leer = (clave, fn) => {
     const m = memo.get(clave);
-    if (m && Date.now() - m.t < VIDA) return m.p.then(clonar);
-    const p = fn();
-    memo.set(clave, { t: Date.now(), p });
+    if (m && m.datos !== undefined) {
+      if (Date.now() - m.t >= VIDA && !m.revisando) {
+        const g = gen;
+        m.revisando = true;
+        fn().then((datos) => {
+          if (g !== gen) return;
+          const cambio = JSON.stringify(datos) !== JSON.stringify(m.datos);
+          memo.set(clave, { t: Date.now(), datos });
+          guardarLuego();
+          if (cambio) avisarCambio();
+        }).catch(() => { m.revisando = false; });
+      }
+      return Promise.resolve(clonar(m.datos)); // copia: las pantallas modifican las filas que reciben
+    }
+    if (m?.p) return m.p.then(clonar);
+    const g = gen;
+    const p = fn().then((datos) => { if (g === gen) { memo.set(clave, { t: Date.now(), datos }); guardarLuego(); } else memo.delete(clave); return datos; });
+    memo.set(clave, { p });
     p.catch(() => memo.delete(clave));
-    return p.then(clonar); // copia: las pantallas modifican las filas que reciben
+    return p.then(clonar);
   };
-  const escribe = (fn) => async (...a) => { try { return await fn(...a); } finally { olvidar(); } };
+  const tocar = (tabla) => {
+    gen++;
+    const afectadas = new Set([tabla, ...(AFECTA[tabla] || [])]);
+    for (const [k, v] of memo) {
+      if (afectadas.has(tablaDe(k))) memo.delete(k); // lo que se acaba de cambiar: siempre del servidor
+      else if (v.datos !== undefined) { v.t = 0; v.revisando = false; } // lo demás: se muestra y se revisa por detrás
+    }
+    guardarLuego();
+  };
+  const escribe = (fn, tabla) => async (...a) => { try { return await fn(...a); } finally { tocar(tabla ?? a[0]); } };
+  const cuenta = (fn) => async (...a) => { try { return await fn(...a); } finally { olvidar(); } };
   const auth = { ...db.auth };
-  for (const k of ['signIn', 'signUp', 'signOut', 'entrarConHuella']) if (db.auth[k]) auth[k] = escribe(db.auth[k]);
+  for (const k of ['signIn', 'signUp', 'entrarConHuella']) if (db.auth[k]) auth[k] = cuenta(db.auth[k]);
+  if (db.auth.signOut) auth.signOut = async (...a) => {
+    try { return await db.auth.signOut(...a); } finally {
+      olvidar();
+      if (persistir && uid) idbHacer('readwrite', (s) => s.delete('memo:' + uid)).catch(() => {}); // lo guardado no queda en el equipo
+      uid = null; hidratado = null;
+    }
+  };
+  auth.session = async () => {
+    const s = await db.auth.session();
+    if (persistir && s?.user?.id) { uid = s.user.id; await hidratar(uid).catch(() => {}); }
+    return s;
+  };
   return {
     ...db,
     auth,
     olvidar,
     select: (tabla, q = {}) => leer('s|' + tabla + '|' + JSON.stringify(q), () => db.select(tabla, q)),
-    rpc: (nombre, args) => (RPC_LECTURA.has(nombre) ? leer('r|' + nombre + '|' + JSON.stringify(args ?? null), () => db.rpc(nombre, args)) : escribe(db.rpc)(nombre, args)),
+    rpc: (nombre, args) => (RPC_LECTURA.has(nombre) ? leer('r|' + nombre + '|' + JSON.stringify(args ?? null), () => db.rpc(nombre, args)) : escribe(db.rpc, nombre)(nombre, args)),
     insert: escribe(db.insert),
     upsert: escribe(db.upsert),
     update: escribe(db.update),

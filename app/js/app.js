@@ -155,6 +155,22 @@ async function navegar() {
   if (yo === navegando) { main().scrollTop = 0; window.scrollTo(0, 0); etiquetarTablas(main()); const bx = $('#btn-exportar'); if (bx) bx.hidden = !main().querySelector('table'); }
 }
 
+// Llegaron datos más nuevos del servidor para la pantalla que se está viendo (db.js los pidió por detrás):
+// se vuelve a pintar sin la rueda de carga y sin perder el scroll. No se toca si hay una ventana abierta,
+// si la persona está escribiendo o si la app está bloqueada; en ese caso la siguiente navegación ya trae lo nuevo.
+window.addEventListener('complex:datos-nuevos', async () => {
+  window.dispatchEvent(new Event('complex:mensajes')); // contadores del menú
+  if (!E.sesion || !E.colegio || !desbloqueada || document.querySelector('.ventana')) return;
+  if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
+  const r = resolver(location.hash || '#/inicio') || resolver('#/inicio');
+  const yo = ++navegando;
+  const m = main(), y = m.scrollTop, wy = window.scrollY;
+  try { await r.fn(r.params); } catch (err) { console.warn(err); return; }
+  if (yo !== navegando) return;
+  m.scrollTop = y; window.scrollTo(0, wy);
+  etiquetarTablas(m);
+});
+
 // ---------------------------------------------------------------- Armazón (REA Phidias §1.2)
 // Menú lateral izquierdo agrupado (Tablero · Comunicación · Comunidad · Academia · Perfil),
 // con buscador "Filtrar menú" y, para acudientes, pestañas de persona (yo + cada hijo).
