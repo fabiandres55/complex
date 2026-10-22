@@ -63,7 +63,9 @@ export async function crearDbSupabase() {
         const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
         falla(error);
       },
-      onChange(cb) { sb.auth.onAuthStateChange((evento) => cb(evento)); },
+      // setTimeout: el aviso llega con el candado de la sesión tomado (p. ej. al renovar el token al abrir);
+      // si cb pidiera la sesión ahí mismo, ambos se esperarían para siempre y la app quedaría "cargando" (pasó el 22-oct).
+      onChange(cb) { sb.auth.onAuthStateChange((evento) => { setTimeout(() => cb(evento), 0); }); },
       async updatePassword(nueva) { const { error } = await sb.auth.updateUser({ password: nueva }); falla(error); },
     },
     async select(tabla, q = {}) {
