@@ -265,6 +265,8 @@ export async function planilla(m, p) {
       const k = caja.querySelector('[name=destino]')?.value ?? k0;
       const pct = num(d.porcentaje);
       if (!String(d.nombre || '').trim()) throw new Error('Escribe el nombre de la actividad.');
+      // destino lleno: el peso se recortó a 0, así que se explica por qué (no "debe ser mayor que 0")
+      if (k && !(pct > 0) && Math.max(0, r2(100 - sumaDestino(k, a?.id))) === 0) throw new Error(`En ${datosDestino(k)?.t || 'ese destino'} las actividades ya suman 100%. Primero baja el % de otra actividad.`);
       if (!(pct > 0) || pct > 100) throw new Error('El peso debe ser mayor que 0 y máximo 100.');
       const extras = nueva ? [...caja.querySelectorAll('[name=tambien]:checked')].map((x) => x.value).filter((x) => x !== k) : [];
       for (const kk of [k, ...extras].filter(Boolean)) {
@@ -335,8 +337,9 @@ export async function planilla(m, p) {
       borrable: true,
       validar: (d) => {
         const w = Number(d.porcentaje);
-        if (!(w > 0) || w > 100) throw new Error('El peso debe ser mayor que 0 y máximo 100.');
         const otros = otrosDe();
+        if (!(w > 0) && otros >= 100) throw new Error(`Las experiencias de I${ind.numero} ya suman 100%. Primero baja el % de otra.`);
+        if (!(w > 0) || w > 100) throw new Error('El peso debe ser mayor que 0 y máximo 100.');
         if (r2(otros + w) > 100) throw new Error(otros >= 100 ? `Las experiencias de I${ind.numero} ya suman 100%. Primero baja el % de otra.` : `Las experiencias de I${ind.numero} deben sumar 100%. Las otras ya suman ${otros}%: a esta le puedes dar máximo ${r2(100 - otros)}%.`);
       },
       alAbrir: (caja) => {
@@ -378,6 +381,7 @@ export async function planilla(m, p) {
       validar: (d) => {
         if (!d.descripcion) throw new Error('Escribe la descripción.');
         const w = Number(d.peso);
+        if (!(w > 0) && otros >= 100) throw new Error('Los criterios del periodo ya suman 100%. Primero baja el peso de otro.');
         if (!(w > 0) || w > 100) throw new Error('El peso debe ser mayor que 0 y máximo 100.');
         if (r2(otros + w) > 100) throw new Error(otros >= 100 ? 'Los criterios del periodo ya suman 100%. Primero baja el peso de otro.' : `Los criterios del periodo deben sumar 100%. Los otros ya suman ${otros}%: a este le puedes dar máximo ${max}%.`);
       },

@@ -573,7 +573,19 @@ function exportarPantalla() {
   const lineas = [];
   for (const [i, t] of tablas.entries()) {
     if (i) lineas.push('');
-    for (const tr of t.querySelectorAll('tr')) lineas.push([...tr.children].map(valor).join(';'));
+    // Celdas combinadas (un criterio sobre varias actividades): ocupan sus columnas para que todo quede alineado en Excel
+    const grilla = [];
+    [...t.rows].forEach((tr, r) => {
+      grilla[r] ??= [];
+      let c = 0;
+      for (const td of tr.cells) {
+        while (grilla[r][c] !== undefined) c++;
+        const cs = Math.max(1, td.colSpan || 1), rs = Math.max(1, td.rowSpan || 1), v = valor(td);
+        for (let y = 0; y < rs; y++) for (let x = 0; x < cs; x++) (grilla[r + y] ??= [])[c + x] = y || x ? '""' : v;
+        c += cs;
+      }
+    });
+    for (const f of grilla) lineas.push(Array.from(f, (x) => x ?? '""').join(';'));
   }
   const titulo = (main().querySelector('h1')?.innerText || 'complex').replace(/[^\w\sáéíóúñÁÉÍÓÚÑ-]/g, '').trim().replace(/\s+/g, '_').slice(0, 60) || 'complex';
   const url = URL.createObjectURL(new Blob(['\ufeff' + lineas.join('\r\n')], { type: 'text/csv;charset=utf-8' }));

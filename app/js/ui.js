@@ -80,8 +80,9 @@ export function fechaHora(f) {
   const h = d.getHours(), m = String(d.getMinutes()).padStart(2, '0');
   return `${fecha(f)}, ${h % 12 || 12}:${m} ${h < 12 ? 'a. m.' : 'p. m.'}`;
 }
-export const hoy = () => {
-  const d = new Date();
+// Fecha local (AAAA-MM-DD) de hoy o de un instante; no usar .slice(0, 10) sobre un ISO (es la fecha UTC)
+export const hoy = (instante) => {
+  const d = instante ? new Date(instante) : new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 

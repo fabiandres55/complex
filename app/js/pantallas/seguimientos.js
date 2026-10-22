@@ -205,7 +205,7 @@ async function editarRegistro(b, s, reg, ests, regs) {
         }
         const datos = {};
         for (const c of s.campos) {
-          const el = caja.querySelector(`[data-campo="${id}"]`);
+          const el = caja.querySelector(`[data-campo="${CSS.escape(String(c.id))}"]`);
           let v;
           if (c.tipo === 'varias') v = [...el.querySelectorAll('input:checked')].map((i) => i.value);
           else if (c.tipo === 'si_no') v = el.value === '' ? null : el.value === '1';

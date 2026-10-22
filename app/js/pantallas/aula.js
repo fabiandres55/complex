@@ -170,6 +170,12 @@ export async function materia(m, p) {
     if (r === 'borrada') materia(m, { ...p, tab: 'tablero' }); else if (r) materia(m, p);
   });
   m.querySelector('[data-nueva-tarea]')?.addEventListener('click', async () => { if (await editarTarea(b, a, null)) materia(m, { ...p, tab: 'tareas' }); });
+  // "＋ Agregar tarea / examen" desde la administración de grupo: abre el formulario de una vez (y solo una vez)
+  if (p.nueva === '1') {
+    delete p.nueva;
+    history.replaceState(null, '', location.hash.replace(/&nueva=1/, ''));
+    m.querySelector(tab === 'examenes' ? '[data-nuevo-examen]' : '[data-nueva-tarea]')?.click();
+  }
 }
 
 // Nota de un estudiante en una materia y periodo (con indicadores y recuperación)
@@ -273,7 +279,7 @@ async function editarTarea(b, a, t) {
           entrega_modo: modo, requiere_entrega: modo === 'en_linea', entrega_en: modo !== 'ninguna' && d.entrega_en ? new Date(d.entrega_en).toISOString() : null,
           foro: !!d.foro,
         };
-        const fechaAct = (datos.entrega_en || datos.publicada_en).slice(0, 10);
+        const fechaAct = hoy(datos.entrega_en || datos.publicada_en);
         const peso = Number(String(d.peso || '').replace(',', '.'));
         if (d.destino && !datos.periodo_id) throw new Error('Para crear la actividad en la planilla elige el periodo.');
         if (d.destino && !(peso > 0)) throw new Error('Escribe el peso (%) de la actividad en la planilla.');

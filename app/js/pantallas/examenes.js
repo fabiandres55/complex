@@ -2,7 +2,7 @@
 // verdadero/falso o abierta) y marca la correcta; el estudiante lo presenta y la nota
 // la calcula el servidor (entregar_examen). Las abiertas las califica el profesor.
 import { E, base, perfiles, personaActiva } from '../estado.js';
-import { esc, aviso, ventana, leerForm, confirmar, nombre, nombreLista, vacio, fecha, fechaHora } from '../ui.js';
+import { esc, aviso, ventana, leerForm, confirmar, nombre, nombreLista, vacio, fecha, fechaHora, hoy } from '../ui.js';
 import { cabecera, camposHTML } from './comun.js';
 import { destinosDe, crearActividad, gruposHermanos } from './destinos.js';
 import { mostrarNota, desempeno } from '../calculos.js';
@@ -153,7 +153,7 @@ async function editor(b, a, ex) {
         if (d.cierra && d.abre && d.cierra <= d.abre) throw new Error('La fecha límite debe ser después de la fecha de inicio.');
         const datos = { titulo: d.titulo, instrucciones: d.instrucciones || null, periodo_id: d.periodo_id || null, abre: d.abre ? new Date(d.abre).toISOString() : new Date().toISOString(), cierra: d.cierra ? new Date(d.cierra).toISOString() : null, duracion_min: Number(d.duracion_min) || null, mostrar_resultado: !!d.mostrar_resultado, publicado: !!d.publicado, num_preguntas: x.preguntas.length };
         const pesoAct = Number(String(d.peso || '').replace(',', '.'));
-        const fechaAct = (datos.cierra || datos.abre).slice(0, 10);
+        const fechaAct = hoy(datos.cierra || datos.abre);
         if (d.destino && !datos.periodo_id) throw new Error('Para crear la evaluación en la planilla elige el periodo.');
         // Esta clase + copias (las copias son independientes)
         const grupos = [{ asigId: a.id, k: d.destino || '' }];
