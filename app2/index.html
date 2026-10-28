@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <!-- Política de seguridad (CSP): solo se ejecuta código de la propia app (y la librería de QR con su
+       huella de integridad); los datos solo van a nuestro Supabase. Si alguien lograra meter HTML en un
+       mensaje, el navegador no ejecutaría scripts. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://auyfjqprhspncctnufzi.supabase.co; connect-src 'self' https://auyfjqprhspncctnufzi.supabase.co wss://auyfjqprhspncctnufzi.supabase.co; font-src 'self' data:; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Complex_</title>
+  <meta name="description" content="Complex_: notas, asistencia, observador y circulares de tu colegio.">
+  <meta name="theme-color" content="#1f4fd1">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="img/icono.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="img/icono-192.png">
+  <link rel="stylesheet" href="estilos.css">
+  <link rel="stylesheet" href="estilos-rea.css">
+</head>
+<body>
+  <div id="app">
+    <div class="cargando pantalla" aria-label="Cargando"><span></span></div>
+  </div>
+  <noscript>Complex_ necesita JavaScript.</noscript>
+  <!-- La librería de Supabase se baja en paralelo con la app (antes empezaba solo cuando la app ya había cargado) -->
+  <link rel="preload" href="vendor/supabase-2.117.3.js" as="script">
+  <!-- El núcleo de la app se pide todo a la vez (sin esperar a que app.js diga qué necesita) -->
+  <link rel="modulepreload" href="js/db.js">
+  <link rel="modulepreload" href="js/estado.js">
+  <link rel="modulepreload" href="js/ui.js">
+  <link rel="modulepreload" href="js/config.js">
+  <link rel="modulepreload" href="js/i18n.js">
+  <link rel="modulepreload" href="js/pantallas/comun.js">
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
